@@ -120,6 +120,33 @@ public class OpcDaProbeTest {
         }
     }
 
+    @Test public void precheckUsesV2ServerWithoutPropertiesOrEnvironmentPassword() throws Exception {
+        final Path points = writeV2Points("json-only-secret");
+        final FakeProvider provider = new FakeProvider(new FakeClient(
+                Collections.singletonList(new PointValidation("a", true, 3))));
+        try {
+            final CapturedRun run = capture(
+                    new String[] { "--precheck-points", points.toString() }, null, provider);
+            assertEquals(0, run.exitCode);
+            assertEquals(1, provider.createCount);
+            assertEquals("opc.example", provider.config.getHost());
+            assertEquals("json-only-secret", provider.config.getPassword());
+            assertFalse(run.stdout.contains("json-only-secret"));
+            assertFalse(run.stderr.contains("json-only-secret"));
+            assertFalse(run.stderr.contains("DEPRECATED"));
+        } finally {
+            Files.deleteIfExists(points);
+        }
+    }
+
+    @Test public void legacyPrecheckWarnsWhenFallingBackToProperties() throws Exception {
+        final FakeClient client = new FakeClient(Collections.singletonList(
+                new PointValidation("a", true, 3)));
+        final CapturedRun run = capturePrecheck(client);
+        assertEquals(0, run.exitCode);
+        assertTrue(run.stderr.contains("[DEPRECATED]"));
+    }
+
     private static Path writeConfig() throws Exception {
         final Path path = Files.createTempFile("opcda-probe-test", ".properties");
         final String text = "host=192.0.2.1\n"
@@ -129,6 +156,16 @@ public class OpcDaProbeTest {
                 + "clsid=00000000-0000-0000-0000-000000000000\n"
                 + "itemId=Group.Item\n";
         Files.write(path, text.getBytes(StandardCharsets.ISO_8859_1));
+        return path;
+    }
+
+    private static Path writeV2Points(final String password) throws Exception {
+        final Path path = Files.createTempFile("opcda-v2-points", ".json");
+        final String text = "{\"server\":{\"host\":\"opc.example\",\"domain\":\"EXAMPLE\","
+                + "\"user\":\"opcuser\",\"password\":\"" + password + "\","
+                + "\"progId\":\"Example.OPC.1\"},\"periodMillis\":1000,"
+                + "\"udp\":{\"host\":\"127.0.0.1\",\"port\":5353},\"items\":[\"a\"]}";
+        Files.write(path, text.getBytes(StandardCharsets.UTF_8));
         return path;
     }
 
@@ -175,9 +212,11 @@ public class OpcDaProbeTest {
     }
 
     private static final class FakeProvider implements OpcDaProbe.ClientProvider {
-        private final FakeClient client;private int createCount;
+        private final FakeClient client;private int createCount;private ProbeConfig config;
         private FakeProvider(final FakeClient client){this.client=client;}
-        @Override public OpcDaClient create(final ProbeConfig config, final String outputPath){createCount++;return client;}
+        @Override public OpcDaClient create(final ProbeConfig config, final String outputPath){
+            createCount++;this.config=config;return client;
+        }
     }
 
     private static final class FakeClient implements OpcDaClient {

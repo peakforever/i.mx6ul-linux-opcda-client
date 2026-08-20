@@ -25,6 +25,59 @@ public class PointsConfigTest {
     @Test(expected=IllegalArgumentException.class) public void rejectsDuplicateItem() throws Exception { parse("{\"periodMillis\":1,\"udp\":{\"host\":\"x\",\"port\":1},\"items\":[\"a\",\"a\"]}"); }
     @Test(expected=IllegalArgumentException.class) public void rejectsUnknownCharset() throws Exception { parse(valid("UTF-8")); }
     @Test(expected=UnsupportedOperationException.class) public void itemsAreImmutable() throws Exception { parse(valid("US-ASCII")).getItems().add("b"); }
+    @Test public void parsesServerAndReconnectSections() throws Exception {
+        final PointsConfig c = parse(v2(
+                "\"progId\":\"Example.OPC.1\",\"socketTimeoutMillis\":45000,\"useNtlmV2\":false",
+                ",\"reconnect\":{\"enabled\":false,\"initialDelayMillis\":2000,"
+                        + "\"maxDelayMillis\":40000,\"maxAttempts\":7}"));
+        assertTrue(c.hasServer());
+        assertEquals("opc.example", c.getServerHost());
+        assertEquals("EXAMPLE", c.getServerDomain());
+        assertEquals("opcuser", c.getServerUser());
+        assertEquals("test-secret", c.getServerPassword());
+        assertEquals("Example.OPC.1", c.getServerProgId());
+        assertEquals(45000, c.getSocketTimeoutMillis());
+        assertFalse(c.isUseNtlmV2());
+        assertFalse(c.isReconnectEnabled());
+        assertEquals(2000L, c.getReconnectInitialDelayMillis());
+        assertEquals(40000L, c.getReconnectMaxDelayMillis());
+        assertEquals(7, c.getReconnectMaxAttempts());
+    }
+    @Test public void appliesServerAndReconnectDefaults() throws Exception {
+        final PointsConfig c = parse(v2("\"clsid\":\"class-id\"", ""));
+        assertEquals(30000, c.getSocketTimeoutMillis());
+        assertTrue(c.isUseNtlmV2());
+        assertTrue(c.isReconnectEnabled());
+        assertEquals(1000L, c.getReconnectInitialDelayMillis());
+        assertEquals(30000L, c.getReconnectMaxDelayMillis());
+        assertEquals(0, c.getReconnectMaxAttempts());
+    }
+    @Test(expected=IllegalArgumentException.class) public void rejectsMissingServerHost() throws Exception {
+        parse(v2Server("\"user\":\"u\",\"password\":\"p\",\"progId\":\"id\""));
+    }
+    @Test(expected=IllegalArgumentException.class) public void rejectsMissingServerUser() throws Exception {
+        parse(v2Server("\"host\":\"h\",\"password\":\"p\",\"progId\":\"id\""));
+    }
+    @Test(expected=IllegalArgumentException.class) public void rejectsMissingServerPassword() throws Exception {
+        parse(v2Server("\"host\":\"h\",\"user\":\"u\",\"progId\":\"id\""));
+    }
+    @Test(expected=IllegalArgumentException.class) public void rejectsMissingProgIdAndClsid() throws Exception {
+        parse(v2("", ""));
+    }
+    @Test(expected=IllegalArgumentException.class) public void rejectsReconnectMaxBelowInitial() throws Exception {
+        parse(v2("\"progId\":\"id\"", ",\"reconnect\":{\"initialDelayMillis\":2000,\"maxDelayMillis\":1000}"));
+    }
     private String valid(final String charset){return "{\"periodMillis\":1,\"udp\":{\"host\":\"x\",\"port\":1,\"md5Charset\":\""+charset+"\"},\"items\":[\"a\"]}";}
     private String port(final int port){return "{\"periodMillis\":1,\"udp\":{\"host\":\"x\",\"port\":"+port+"},\"items\":[\"a\"]}";}
+    private String v2(final String serverExtra, final String rootExtra) {
+        final String suffix = serverExtra.isEmpty() ? "" : "," + serverExtra;
+        return v2Server("\"host\":\"opc.example\",\"domain\":\"EXAMPLE\","
+                + "\"user\":\"opcuser\",\"password\":\"test-secret\"" + suffix, rootExtra);
+    }
+    private String v2Server(final String serverFields) { return v2Server(serverFields, ""); }
+    private String v2Server(final String serverFields, final String rootExtra) {
+        return "{\"server\":{" + serverFields + "},\"periodMillis\":1000,"
+                + "\"udp\":{\"host\":\"127.0.0.1\",\"port\":5353},\"items\":[\"a\"]"
+                + rootExtra + "}";
+    }
 }
