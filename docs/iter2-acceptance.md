@@ -26,11 +26,11 @@ Utgard SyncAccess 每周期为每个绑定 Item 产生一次回调。本实现�
 
 ~~~text
 mvn clean test
-Tests run: 87, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 88, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ~~~
 
-其中保留迭代 1 的 51 个回归测试，并新增 36 个测试，覆盖：
+其中保留迭代 1 的 51 个回归测试，并新增 37 个测试，覆盖：
 
 - 配置 schema、端口边界、字符集白名单、重复/空点位。
 - 30/1440 字节边界、49 条拆包、Unix 秒、Quality 原样编码、发送失败计数。
