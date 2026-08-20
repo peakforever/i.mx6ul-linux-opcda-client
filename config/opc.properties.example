@@ -1,0 +1,22 @@
+# Windows OPC DA Server address. Use an IP address for the first test.
+host=192.168.1.100
+
+# Windows domain. In a workgroup, this is commonly the OPC Server machine name.
+domain=OPC-SERVER
+user=opcuser
+
+# Prefer supplying both values. CLSID avoids depending on remote OPCEnum lookup.
+progId=KEPware.KEPServerEX.V6
+clsid=00000000-0000-0000-0000-000000000000
+
+# One known, readable OPC Item ID.
+itemId=Channel1.Device1.Tag1
+
+# SyncAccess performs synchronous polling; the callback below is local to this process.
+periodMillis=1000
+sampleCount=10
+readTimeoutSeconds=30
+
+# Remote OPCEnum/DCOM socket timeout and Windows authentication mode.
+socketTimeoutMillis=30000
+useNtlmV2=true

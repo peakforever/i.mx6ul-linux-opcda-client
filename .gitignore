@@ -1,0 +1,6 @@
+/config/opc.properties
+/target/
+/runtime/
+/output/
+*.log
+.DS_Store
