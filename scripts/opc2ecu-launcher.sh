@@ -6,7 +6,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_HOME=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 
 if [ "$#" -eq 0 ]; then
-    set -- --collect "$APP_HOME/config/points.json" "$APP_HOME/config/opc.properties"
+    set -- --collect "$APP_HOME/config/points.json"
 fi
 
 exec "$APP_HOME/runtime/bin/java" \

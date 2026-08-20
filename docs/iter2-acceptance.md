@@ -11,7 +11,8 @@
 - 时间戳来自 ItemState.getTimestamp()；Quality 按原始 16 bit 发送。
 - 心跳与业务共用一个 DatagramSocket，固定 1000/500/3 参数，支持 uint32
   会话 ID 回绕、应答匹配、离线和恢复状态。
-- --collect <points.json> [opc.properties] 持续运行并通过 shutdown hook
+- --collect <points.json> [opc.properties] 持续运行并通过 shutdown hook；v2 默认从
+  points.json 读取连接、采集、发送和重连配置，旧版缺少 server 段时弃用式回退
   关闭采集、心跳线程和 socket。
 - 保留 J-Interop 首次 DCOM 激活的 NTLM packet privacy/integrity 反射修正。
 - 新增 --precheck-points 模式，复用 validateItems 的 50 点批处理，报告不可读和

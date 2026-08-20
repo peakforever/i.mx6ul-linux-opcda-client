@@ -1,9 +1,25 @@
 {
+  "server": {
+    "host": "192.168.1.2",
+    "domain": "EXAMPLE",
+    "user": "opcuser",
+    "password": "replace-me",
+    "progId": "Matrikon.OPC.Simulation.1",
+    "clsid": "f8582cf2-88fb-11d0-b850-00c0f0104305",
+    "socketTimeoutMillis": 30000,
+    "useNtlmV2": true
+  },
   "periodMillis": 1000,
   "udp": {
     "host": "127.0.0.1",
     "port": 5353,
     "md5Charset": "US-ASCII"
+  },
+  "reconnect": {
+    "enabled": true,
+    "initialDelayMillis": 1000,
+    "maxDelayMillis": 30000,
+    "maxAttempts": 0
   },
   "items": [
     "OPCServerDemo.Group01.TAG001",

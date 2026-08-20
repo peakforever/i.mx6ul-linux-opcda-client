@@ -45,6 +45,7 @@ fi
 
 mv "$RUNTIME_DIR" "$STAGING/opc2ecu/runtime"
 cp "$PROJECT_DIR/target/opcda-probe.jar" "$STAGING/opc2ecu/lib/opcda-probe.jar"
+cp "$PROJECT_DIR/config/points.json" "$STAGING/opc2ecu/config/points.json"
 cp "$PROJECT_DIR/config/opc.properties" "$STAGING/opc2ecu/config/opc.properties"
 cp "$SCRIPT_DIR/opc2ecu-launcher.sh" "$STAGING/opc2ecu/bin/opc2ecu"
 chmod +x "$STAGING/opc2ecu/bin/opc2ecu"

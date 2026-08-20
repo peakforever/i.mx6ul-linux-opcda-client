@@ -36,15 +36,18 @@ cp config/opc.properties.example config/opc.properties
 cp config/points.json.example config/points.json
 ```
 
-填写 OPC Server 地址、Windows 账号、ProgID、CLSID 和一个确定可读的 Item ID。密码不要写入配置文件，通过环境变量提供：
+生产采集和点位预检在 `points.json` 中填写 OPC Server 地址、Windows 账号、密码、
+ProgID/CLSID（至少一个）、点位、周期、UDP 目标及重连参数。该文件含明文密码，
+应设置为权限 `600`，不得提交或写入日志。
+
+默认读取、Server/Item 枚举和清单导出等探测模式继续使用 `opc.properties`。这些
+模式的密码不写入配置文件，通过环境变量提供：
 
 ```bash
 export OPC_PASSWORD='实际密码'
 ```
 
-生产采集的点位、周期、UDP 目标和 MD5 字符集位于 points.json；OPC 连接和
-重连参数仍独立保存在 opc.properties。md5Charset 可省略，默认 US-ASCII，
-现场包含中文路径时可明确配置为 GBK。
+`md5Charset` 可省略，默认 US-ASCII，现场包含中文路径时可明确配置为 GBK。
 
 ## 运行
 
@@ -59,7 +62,7 @@ java -Djava.awt.headless=true -jar target/opcda-probe.jar config/opc.properties
 ~~~bash
 java -Xms16m -Xmx48m -XX:+UseSerialGC -Djava.awt.headless=true \
   -jar target/opcda-probe.jar \
-  --collect config/points.json config/opc.properties
+  --collect config/points.json
 ~~~
 
 每个采集周期在收到全部配置点位后生成一个快照，每个 UDP 包最多 48 条记录；
@@ -71,7 +74,7 @@ java -Xms16m -Xmx48m -XX:+UseSerialGC -Djava.awt.headless=true \
 
 ```bash
 timeout 120s java -jar target/opcda-probe.jar \
-  --precheck-points config/points.json config/opc.properties
+  --precheck-points config/points.json
 ```
 
 预检连接 OPC Server，并以每批 50 点调用 OPC `validateItems`。只有可读且规范
@@ -85,8 +88,11 @@ BSTR、BOOL、DATE、数组及其他类型报告 `non-numeric`。输出适合脚
 ```
 
 全部通过时退出码为 `0`，存在不可读或非数值点时为 `4`。该模式只使用
-points.json 中的点位列表，不创建 UDP socket、不发送业务包或心跳；不过仍复用
+points.json，不创建 UDP socket、不发送业务包或心跳；不过仍复用
 完整 PointsConfig 校验，因此 points.json 的周期和 UDP 字段也必须合法。
+
+为兼容旧部署，上述两个命令仍接受可选的第二个 `opc.properties` 参数。当
+`points.json` 缺少 `server` 段时才回退到该文件和 `OPC_PASSWORD`，并输出弃用警告。
 
 只检查配置、不连接 OPC Server：
 
@@ -211,7 +217,7 @@ Group。JSON 不包含 Windows 密码。
   -Xmx48m \
   -XX:+UseSerialGC \
   -Djava.awt.headless=true \
-  -jar opcda-probe.jar --collect points.json opc.properties
+  -jar opcda-probe.jar --collect points.json
 ```
 
 在选择 ARM JRE 前，必须先确认设备的架构、C 库和 hard-float ABI：
