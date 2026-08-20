@@ -9,21 +9,26 @@
 规格:docs/dev-spec-iter1.md
 状态:开发完成，自动化验收通过；等待 Windows+Matrikon 现场验收
 
-## 迭代 2:多 Item 采集 + OPC2ECU UDP 发送
+## 迭代 2:多 Item 采集 + OPC2ECU UDP 发送(设计已定案)
 
 目标:实现原 Windows 程序的替代品——多 Item 周期采集、30 字节小端记录、
-48 条/报文组包、UDP 发送到 ECU 应用。
+48 条/报文组包、UDP 发送到网关 OPC-DA 驱动(端口 5353)+ V1.2 心跳在线探测。
 
-依赖:迭代 1 完成。编码器(EcuRecordCodec)已就绪并有固定字节向量自测。
-关键设计点(开工时细化):
-- 发送目标=本机回环(默认 127.0.0.1 + ECU 应用 UDP 端口),配置项
-  udp.targetHost / udp.targetPort;行为与 Windows 版 opc2ecu 逐字节一致
-- 多 Item 配置格式(点位表):等同事驱动框架规范定案后对齐;先按 properties
-  多 item 列表或简单 JSON 过渡
-- 采集循环:单 Group 多 Item SyncAccess 或 Async20Access,周期统一
-- 组包:满 48 条或到 flush 周期即发;MD5 输入字符集按现场 Windows ACP 配置
-  (中文点名通常 GBK,必须与 ECU C++ 应用预期一致)
-- 丢包/背压:UDP 发送失败时的记录策略(丢弃/落盘/计数)
+状态:2026-08-20 设计收敛(协议文档 v1.2 到位 + 与用户讨论定案),规格见
+docs/dev-spec-iter2.md,待 Codex 开工。
+
+定案摘要:
+- 数据模型:周期快照(协议 5.1.1 确认,离线期间业务照发)
+- 配置格式:points.json(JSON 点位表;连接参数仍走 opc.properties)
+- 组包:每周期全量,≤48 块/包拆包,单向无应答不重传
+- 心跳:1000ms/500ms 超时/连续 3 次离线,会话 ID 自增匹配,独立调度
+- MD5 字符集:md5Charset 配置项(默认 US-ASCII,支持 GBK,集成对照确认)
+- 目标地址:udp.host 配置化,默认 127.0.0.1(客户端与驱动同机)
+- 契约文档:docs/OPC-DA驱动自定义UDP通讯协议v1.2.docx(同事,V1.2 兼容 V1.1)
+
+遗留外部依赖:
+- 同事完整驱动框架规范(配置/接口部分,若 UDP 协议文档非全文)——影响迭代 3
+- Windows+Matrikon 集成验证窗口(验收迭代 1/2)
 
 ## 迭代 3:驱动框架适配层 + 配置格式对齐
 
