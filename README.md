@@ -67,6 +67,27 @@ java -Xms16m -Xmx48m -XX:+UseSerialGC -Djava.awt.headless=true \
 业务仍照常发送。心跳固定每 1000 ms 发送一次，500 ms 未应答计一次失败，连续
 3 次失败输出 [OFFLINE]，收到匹配会话 ID 的应答后输出 [RECOVERED]。
 
+正式启动采集前可预检点位表：
+
+```bash
+timeout 120s java -jar target/opcda-probe.jar \
+  --precheck-points config/points.json config/opc.properties
+```
+
+预检连接 OPC Server，并以每批 50 点调用 OPC `validateItems`。只有可读且规范
+VARTYPE 为数值标量（I1/I2/I4/I8、UI1/UI2/UI4/UI8、R4/R8、CY）的点位通过；
+BSTR、BOOL、DATE、数组及其他类型报告 `non-numeric`。输出适合脚本解析：
+
+```text
+[PRECHECK 1/2] item=Group.Numeric result=PASS reason=ok
+[PRECHECK 2/2] item=Group.Text result=FAIL reason=non-numeric
+[PRECHECK] summary passed=1 failed=1
+```
+
+全部通过时退出码为 `0`，存在不可读或非数值点时为 `4`。该模式只使用
+points.json 中的点位列表，不创建 UDP socket、不发送业务包或心跳；不过仍复用
+完整 PointsConfig 校验，因此 points.json 的周期和 UDP 字段也必须合法。
+
 只检查配置、不连接 OPC Server：
 
 ```bash
@@ -99,13 +120,17 @@ reconnect.maxAttempts=0
 `reconnect.maxAttempts=0` 表示连接建立后的断线恢复可无限重试。关闭进程时会停止
 重连并释放当前客户端。恢复后输出 `[GAP]` 摘要，包含缺口起止时间及估算漏采数。
 
+采集模式另有周期级看门狗：即使仍有部分 Item 回调，超过 3 个采样周期没有发出
+完整快照也会输出 WARN，包含上次完整快照时间和当前已收点位数，并累计
+`snapshotStalls`。该告警不会触发重连；通常应运行点位预检并人工修正坏点或类型。
+
 进程退出码：
 
 - `0`：成功。
 - `1`：未分类内部错误。
 - `2`：配置错误。
 - `3`：连接或 DCOM 激活失败。
-- `4`：连接建立后的读取或 Item 绑定失败。
+- `4`：连接建立后的读取或 Item 绑定失败，或点位预检存在失败项。
 - `5`：等待采样或重连等待超时。
 
 `[CONFIG]`、`[CONNECT]`、`[READ]`、`[GAP]` 和 `[RESULT]` 行保留在 stdout，

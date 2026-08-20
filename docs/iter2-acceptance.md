@@ -14,6 +14,10 @@
 - --collect <points.json> [opc.properties] 持续运行并通过 shutdown hook
   关闭采集、心跳线程和 socket。
 - 保留 J-Interop 首次 DCOM 激活的 NTLM packet privacy/integrity 反射修正。
+- 新增 --precheck-points 模式，复用 validateItems 的 50 点批处理，报告不可读和
+  非数值点位；此路径不创建 UDP socket，也不启动业务发送或心跳。
+- 新增周期级看门狗：连续超过 3×periodMillis 没有完整快照时记录 WARN 和
+  snapshotStalls；部分回调仍由连接级看门狗视为连接存活，周期告警不会触发重连。
 
 ## 实现假设
 
@@ -26,19 +30,26 @@ Utgard SyncAccess 每周期为每个绑定 Item 产生一次回调。本实现�
 
 ~~~text
 mvn clean test
-Tests run: 88, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 101, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ~~~
 
-其中保留迭代 1 的 51 个回归测试，并新增 37 个测试，覆盖：
+其中迭代 2 原有 88 个测试保持通过，并新增 13 个预检收尾测试，覆盖：
 
 - 配置 schema、端口边界、字符集白名单、重复/空点位。
 - 30/1440 字节边界、49 条拆包、Unix 秒、Quality 原样编码、发送失败计数。
 - 心跳小端会话 ID、自增/回绕、匹配/丢弃、连续超时、离线恢复和离线继续探测。
 - fake OPC 客户端的多 Item 初次绑定、断线后完整重绑和全新实例保证。
 - 周期快照完整性及重复 Item 时不跨周期混包。
+- VARTYPE 表中 11 个数值标量、非数值标量和数组分类。
+- 点位预检全通过、不可读、非数值的报告格式与退出码，以及连接/配置失败映射。
+- 部分回调时周期停滞计数、完整快照不误报、快照恢复后新停滞再次计数。
 
 Java 编译目标为 class-file major version 52（Java 8）。
+
+Fat JAR 由 `mvn clean package` 生成。无 OPC Server 的连接失败场景通过 fake 客户端
+验证退出码 3 及 TCP 135/防火墙提示；畸形 points.json 验证退出码 2，并确认在创建
+OPC 客户端或任何 UDP 资源前结束。
 
 ## 待现场验收
 
