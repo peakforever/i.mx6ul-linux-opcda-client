@@ -69,9 +69,9 @@ public final class OpcDaProbe {
                 return ExitCodes.SUCCESS;
             }
 
-            final ProbeConfig config = loadConfig(command.configPath, password, command.mode);
             if (command.mode == ProbeMode.COLLECT) {
                 final PointsConfig points = loadPointsConfig(command.pointsPath);
+                final ProbeConfig config = loadCollectionConfig(command, points, password);
                 final DatagramChannel channel = new UdpDatagramChannel(
                         points.getUdpHost(), points.getUdpPort());
                 heartbeat = new HeartbeatSession(channel, new HeartbeatSession.StateListener() {
@@ -88,10 +88,12 @@ public final class OpcDaProbe {
             }
             if (command.mode == ProbeMode.PRECHECK_POINTS) {
                 final PointsConfig points = loadPointsConfig(command.pointsPath);
+                final ProbeConfig config = loadCollectionConfig(command, points, password);
                 directClient = clientProvider.create(config, null);
                 connectWithOutput(directClient);
                 return runPrecheck(points, directClient);
             }
+            final ProbeConfig config = loadConfig(command.configPath, password, command.mode);
             printTarget(config, command.mode);
             if (command.mode == ProbeMode.CHECK_CONFIG) {
                 System.out.println("[RESULT] Configuration validation succeeded; no network connection was attempted.");
@@ -340,6 +342,17 @@ public final class OpcDaProbe {
             throw new IllegalArgumentException(
                     "Unable to read points configuration file " + path, e);
         }
+    }
+
+    private static ProbeConfig loadCollectionConfig(
+            final Command command, final PointsConfig points, final String legacyPassword) {
+        if (points.hasServer()) {
+            return ProbeConfig.fromPointsConfig(points);
+        }
+        System.err.println(
+                "[DEPRECATED] points.json has no server section; falling back to opc.properties. "
+                        + "Move connection settings into points.json v2.");
+        return loadConfig(command.configPath, legacyPassword, command.mode);
     }
 
     private static void printItems(final List<String> itemIds) {

@@ -41,6 +41,13 @@ public final class ProbeConfig {
             progId = required(properties, "progId");
             clsid = required(properties, "clsid");
             itemId = required(properties, "itemId");
+        } else if (mode == ProbeMode.COLLECT || mode == ProbeMode.PRECHECK_POINTS) {
+            progId = optional(properties, "progId");
+            clsid = optional(properties, "clsid");
+            if (progId.isEmpty() && clsid.isEmpty()) {
+                throw new IllegalArgumentException("progId or clsid is required");
+            }
+            itemId = optional(properties, "itemId");
         } else {
             progId = required(properties, "progId");
             clsid = required(properties, "clsid");
@@ -83,6 +90,29 @@ public final class ProbeConfig {
             throw new IllegalArgumentException("mode must not be null");
         }
         return new ProbeConfig(properties, password, mode);
+    }
+
+    public static ProbeConfig fromPointsConfig(final PointsConfig points) {
+        if (points == null || !points.hasServer()) {
+            throw new IllegalArgumentException("points.json server section is required");
+        }
+        final Properties properties = new Properties();
+        properties.setProperty("host", points.getServerHost());
+        properties.setProperty("domain", points.getServerDomain());
+        properties.setProperty("user", points.getServerUser());
+        properties.setProperty("progId", points.getServerProgId());
+        properties.setProperty("clsid", points.getServerClsid());
+        properties.setProperty("periodMillis", Integer.toString(points.getPeriodMillis()));
+        properties.setProperty("socketTimeoutMillis", Integer.toString(points.getSocketTimeoutMillis()));
+        properties.setProperty("useNtlmV2", Boolean.toString(points.isUseNtlmV2()));
+        properties.setProperty("reconnect.enabled", Boolean.toString(points.isReconnectEnabled()));
+        properties.setProperty("reconnect.initialDelayMillis",
+                Long.toString(points.getReconnectInitialDelayMillis()));
+        properties.setProperty("reconnect.maxDelayMillis",
+                Long.toString(points.getReconnectMaxDelayMillis()));
+        properties.setProperty("reconnect.maxAttempts",
+                Integer.toString(points.getReconnectMaxAttempts()));
+        return new ProbeConfig(properties, points.getServerPassword(), ProbeMode.COLLECT);
     }
 
     private static String required(final Properties properties, final String key) {
