@@ -6,6 +6,7 @@ import com.taiji.opc2ecu.core.OpcDaException;
 import com.taiji.opc2ecu.core.OpcDataCallback;
 import com.taiji.opc2ecu.core.OpcReadValue;
 import com.taiji.opc2ecu.core.ProbeConfig;
+import com.taiji.opc2ecu.core.PointValidation;
 
 import java.io.BufferedWriter;
 import java.lang.reflect.Field;
@@ -145,7 +146,7 @@ public final class UtgardOpcDaClient implements OpcDaClient {
         }
         try {
             final List<String> itemIds = browseItems();
-            final List<ItemMetadata> items = validateItems(itemIds);
+            final List<ItemMetadata> items = validateItemMetadata(itemIds);
             final OPCSERVERSTATUS status = server.getServerState();
             final Path output = Paths.get(catalogOutputPath).toAbsolutePath().normalize();
             final Path parent = output.getParent();
@@ -249,7 +250,25 @@ public final class UtgardOpcDaClient implements OpcDaClient {
                 cause);
     }
 
-    private List<ItemMetadata> validateItems(final List<String> itemIds) throws Exception {
+    @Override
+    public List<PointValidation> validateItems(final List<String> itemIds) throws OpcDaException {
+        requireConnected();
+        try {
+            final List<ItemMetadata> metadata = validateItemMetadata(itemIds);
+            final List<PointValidation> validations =
+                    new ArrayList<PointValidation>(metadata.size());
+            for (final ItemMetadata item : metadata) {
+                validations.add(new PointValidation(
+                        item.itemId, item.valid && (item.accessRights & 1) != 0,
+                        item.varType & 0xffff));
+            }
+            return validations;
+        } catch (final Exception e) {
+            throw readException("Unable to validate configured OPC items", e);
+        }
+    }
+
+    private List<ItemMetadata> validateItemMetadata(final List<String> itemIds) throws Exception {
         final List<ItemMetadata> metadata = new ArrayList<ItemMetadata>(itemIds.size());
         final Group group = server.addGroup("opc2ecu-catalog-" + System.currentTimeMillis());
         try {

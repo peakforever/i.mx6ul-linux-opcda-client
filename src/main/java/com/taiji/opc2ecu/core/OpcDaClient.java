@@ -9,6 +9,9 @@ public interface OpcDaClient {
     boolean isConnected();
     List<String> browseItems() throws Exception;
     int exportCatalog() throws Exception;
+    default List<PointValidation> validateItems(final List<String> itemIds) throws Exception {
+        throw new UnsupportedOperationException("This OPC client does not support item validation");
+    }
     OpcReadValue readItem(String itemId) throws Exception;
     /** Iteration-1 compatibility entry point. */
     void bindSyncRead(OpcDataCallback callback) throws Exception;

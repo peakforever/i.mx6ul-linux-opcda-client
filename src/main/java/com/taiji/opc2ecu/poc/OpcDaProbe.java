@@ -13,6 +13,7 @@ import com.taiji.opc2ecu.core.OpcReadValue;
 import com.taiji.opc2ecu.core.ProbeConfig;
 import com.taiji.opc2ecu.core.ProbeMode;
 import com.taiji.opc2ecu.core.PointsConfig;
+import com.taiji.opc2ecu.core.PointValidation;
 import com.taiji.opc2ecu.core.ReconnectManager;
 import com.taiji.opc2ecu.core.ReconnectPolicy;
 import com.taiji.opc2ecu.core.UdpDatagramChannel;
@@ -47,6 +48,16 @@ public final class OpcDaProbe {
     }
 
     static int run(final String[] args, final String password) {
+        return run(args, password, new ClientProvider() {
+            @Override public OpcDaClient create(
+                    final ProbeConfig config, final String outputPath) {
+                return new UtgardOpcDaClient(config, outputPath);
+            }
+        });
+    }
+
+    static int run(
+            final String[] args, final String password, final ClientProvider clientProvider) {
         OpcDaClient directClient = null;
         ReconnectManager reconnectManager = null;
         HeartbeatSession heartbeat = null;
@@ -74,6 +85,12 @@ public final class OpcDaProbe {
                 reconnectManager = createReconnectManager(config, points.getPeriodMillis());
                 runCollection(points, reconnectManager, heartbeat, channel);
                 return ExitCodes.SUCCESS;
+            }
+            if (command.mode == ProbeMode.PRECHECK_POINTS) {
+                final PointsConfig points = loadPointsConfig(command.pointsPath);
+                directClient = clientProvider.create(config, null);
+                connectWithOutput(directClient);
+                return runPrecheck(points, directClient);
             }
             printTarget(config, command.mode);
             if (command.mode == ProbeMode.CHECK_CONFIG) {
@@ -103,7 +120,7 @@ public final class OpcDaProbe {
                 return ExitCodes.SUCCESS;
             }
 
-            directClient = new UtgardOpcDaClient(config, command.outputPath);
+            directClient = clientProvider.create(config, command.outputPath);
             connectWithOutput(directClient);
             if (command.mode == ProbeMode.LIST_ITEMS) {
                 printItems(directClient.browseItems());
@@ -249,13 +266,21 @@ public final class OpcDaProbe {
         Runtime.getRuntime().addShutdownHook(hook);
         try {
             final UdpRecordSender sender = new UdpRecordSender(channel, points.getMd5Charset());
-            manager.start(points.getItems(), new CollectionCycle(points.getItems(), sender));
+            final CollectionCycle cycle = new CollectionCycle(
+                    points.getItems(), sender, points.getPeriodMillis(),
+                    new CollectionCycle.TimeSource() {
+                        @Override public long nowMillis() { return System.currentTimeMillis(); }
+                    }, new CollectionCycle.SnapshotListener() {
+                        @Override public void onSnapshot(final long snapshotAtMillis) { }
+                    });
+            manager.start(points.getItems(), cycle);
             heartbeat.start();
             System.out.printf("[START] Collecting %d item(s) every %d ms to %s:%d.%n",
                     points.getItems().size(), points.getPeriodMillis(),
                     points.getUdpHost(), points.getUdpPort());
             while (!stopped.await(250L, TimeUnit.MILLISECONDS)) {
                 manager.checkWatchdog();
+                cycle.checkWatchdog();
             }
         } finally {
             managerTarget.set(null);
@@ -263,6 +288,30 @@ public final class OpcDaProbe {
             try { Runtime.getRuntime().removeShutdownHook(hook); }
             catch (final IllegalStateException ignored) { }
         }
+    }
+
+    private static int runPrecheck(
+            final PointsConfig points, final OpcDaClient client) throws Exception {
+        final List<PointValidation> results = client.validateItems(points.getItems());
+        int passed = 0;
+        for (int i = 0; i < results.size(); i++) {
+            final PointValidation result = results.get(i);
+            final String reason;
+            if (!result.isReadable()) {
+                reason = "not-readable";
+            } else if (!result.isNumeric()) {
+                reason = "non-numeric";
+            } else {
+                reason = "ok";
+                passed++;
+            }
+            System.out.printf("[PRECHECK %d/%d] item=%s result=%s reason=%s%n",
+                    i + 1, results.size(), result.getItemId(),
+                    "ok".equals(reason) ? "PASS" : "FAIL", reason);
+        }
+        final int failed = results.size() - passed;
+        System.out.printf("[PRECHECK] summary passed=%d failed=%d%n", passed, failed);
+        return failed == 0 ? ExitCodes.SUCCESS : ExitCodes.READ_ERROR;
     }
 
     private static void connectWithOutput(final OpcDaClient client) throws Exception {
@@ -352,6 +401,7 @@ public final class OpcDaProbe {
         System.err.println("  java -jar opcda-probe.jar --list-items [config-file]");
         System.err.println("  java -jar opcda-probe.jar --export-catalog <output.json> [config-file]");
         System.err.println("  java -jar opcda-probe.jar --collect <points.json> [opc.properties]");
+        System.err.println("  java -jar opcda-probe.jar --precheck-points <points.json> [opc.properties]");
         System.err.println("  java -jar opcda-probe.jar --self-test-protocol");
     }
 
@@ -416,6 +466,14 @@ public final class OpcDaProbe {
                 return new Command(ProbeMode.COLLECT,
                         args.length == 3 ? args[2] : DEFAULT_CONFIG, null, args[1]);
             }
+            if ("--precheck-points".equals(args[0])) {
+                if (args.length < 2 || args.length > 3) {
+                    throw new IllegalArgumentException(
+                            "--precheck-points requires points.json and optional opc.properties paths");
+                }
+                return new Command(ProbeMode.PRECHECK_POINTS,
+                        args.length == 3 ? args[2] : DEFAULT_CONFIG, null, args[1]);
+            }
             throw new IllegalArgumentException("Unknown command or too many arguments");
         }
 
@@ -424,5 +482,9 @@ public final class OpcDaProbe {
                 throw new IllegalArgumentException("Only one config file path may be supplied");
             }
         }
+    }
+
+    interface ClientProvider {
+        OpcDaClient create(ProbeConfig config, String outputPath);
     }
 }
