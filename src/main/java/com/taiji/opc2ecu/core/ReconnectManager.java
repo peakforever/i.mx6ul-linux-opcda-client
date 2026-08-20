@@ -1,5 +1,9 @@
 package com.taiji.opc2ecu.core;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +43,7 @@ public final class ReconnectManager implements AutoCloseable {
     private volatile boolean stopRequested;
     private OpcDaClient client;
     private OpcDataCallback callback;
+    private List<String> items;
     private GapSummary lastGap;
     private long missedSamples;
 
@@ -91,7 +96,11 @@ public final class ReconnectManager implements AutoCloseable {
         } : gapListener;
     }
 
-    public synchronized void start(final OpcDataCallback applicationCallback) throws OpcDaException {
+    public synchronized void start(
+            final List<String> itemIds, final OpcDataCallback applicationCallback) throws OpcDaException {
+        if (itemIds == null || itemIds.isEmpty()) {
+            throw new IllegalArgumentException("items must not be empty");
+        }
         if (applicationCallback == null) {
             throw new IllegalArgumentException("callback must not be null");
         }
@@ -99,13 +108,14 @@ public final class ReconnectManager implements AutoCloseable {
             throw new IllegalStateException("ReconnectManager is already started");
         }
         stopRequested = false;
+        items = Collections.unmodifiableList(new ArrayList<String>(itemIds));
         callback = wrap(applicationCallback);
         state = ConnectionState.CONNECTING;
         final OpcDaClient candidate = factory.create();
         try {
             candidate.connect();
             try {
-                candidate.bindSyncRead(callback);
+                candidate.bindSyncRead(items, callback);
             } catch (final Exception bindFailure) {
                 throw readFailure(
                         "Connected to the OPC DA server but failed to bind the configured item. "
@@ -128,6 +138,11 @@ public final class ReconnectManager implements AutoCloseable {
                             + "DCOM permissions, and Windows firewall TCP 135/RPC dynamic ports.",
                     e);
         }
+    }
+
+    /** Preserves the iteration-1 API for the single configured item. */
+    public synchronized void start(final OpcDataCallback applicationCallback) throws OpcDaException {
+        start(Collections.singletonList("__iteration1_single_item__"), applicationCallback);
     }
 
     public synchronized OpcReadValue readItem(final String itemId) throws OpcDaException {
@@ -196,7 +211,7 @@ public final class ReconnectManager implements AutoCloseable {
             final OpcDaClient candidate = factory.create();
             try {
                 candidate.connect();
-                candidate.bindSyncRead(callback);
+                candidate.bindSyncRead(items, callback);
                 client = candidate;
                 lastSampleMillis = clock.nowMillis();
                 state = ConnectionState.CONNECTED;

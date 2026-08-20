@@ -53,17 +53,27 @@ public final class UtgardOpcDaClient implements OpcDaClient {
 
     private final ProbeConfig config;
     private final String catalogOutputPath;
+    private final int samplingPeriodMillis;
     private final ScheduledExecutorService executor;
     private Server server;
     private AccessBase access;
     private volatile boolean connected;
 
     public UtgardOpcDaClient(final ProbeConfig config, final String catalogOutputPath) {
+        this(config, catalogOutputPath, config == null ? 0 : config.getPeriodMillis());
+    }
+
+    public UtgardOpcDaClient(
+            final ProbeConfig config, final String catalogOutputPath, final int samplingPeriodMillis) {
         if (config == null) {
             throw new IllegalArgumentException("config must not be null");
         }
         this.config = config;
         this.catalogOutputPath = catalogOutputPath;
+        if (samplingPeriodMillis <= 0) {
+            throw new IllegalArgumentException("samplingPeriodMillis must be greater than zero");
+        }
+        this.samplingPeriodMillis = samplingPeriodMillis;
         this.executor = Executors.newSingleThreadScheduledExecutor();
     }
 
@@ -176,21 +186,32 @@ public final class UtgardOpcDaClient implements OpcDaClient {
 
     @Override
     public synchronized void bindSyncRead(final OpcDataCallback callback) throws OpcDaException {
+        bindSyncRead(java.util.Collections.singletonList(config.getItemId()), callback);
+    }
+
+    @Override
+    public synchronized void bindSyncRead(
+            final List<String> items, final OpcDataCallback callback) throws OpcDaException {
         requireConnected();
+        if (items == null || items.isEmpty()) {
+            throw new IllegalArgumentException("items must not be empty");
+        }
         if (callback == null) {
             throw new IllegalArgumentException("callback must not be null");
         }
         try {
-            access = new SyncAccess(server, config.getPeriodMillis());
-            access.addItem(config.getItemId(), new DataCallback() {
-                @Override
-                public void changed(final Item item, final ItemState state) {
-                    callback.onData(convert(item, state));
-                }
-            });
+            access = new SyncAccess(server, samplingPeriodMillis);
+            for (final String itemId : items) {
+                access.addItem(itemId, new DataCallback() {
+                    @Override
+                    public void changed(final Item item, final ItemState state) {
+                        callback.onData(convert(item, state));
+                    }
+                });
+            }
             access.bind();
         } catch (final Exception e) {
-            throw readException("Unable to bind synchronous read for item " + config.getItemId(), e);
+            throw readException("Unable to bind synchronous read for configured items", e);
         }
     }
 

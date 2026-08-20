@@ -6,5 +6,6 @@ public enum ProbeMode {
     LIST_SERVERS,
     LIST_ITEMS,
     EXPORT_CATALOG,
+    COLLECT,
     SELF_TEST_PROTOCOL
 }

@@ -37,10 +37,14 @@ public final class ProbeConfig {
             progId = required(properties, "progId");
             clsid = required(properties, "clsid");
             itemId = optional(properties, "itemId");
-        } else {
+        } else if (mode == ProbeMode.READ_ITEM) {
             progId = required(properties, "progId");
             clsid = required(properties, "clsid");
             itemId = required(properties, "itemId");
+        } else {
+            progId = required(properties, "progId");
+            clsid = required(properties, "clsid");
+            itemId = optional(properties, "itemId");
         }
         periodMillis = positiveInt(properties, "periodMillis", 1000);
         sampleCount = positiveInt(properties, "sampleCount", 10);

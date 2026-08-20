@@ -1,7 +1,10 @@
 package com.taiji.opc2ecu.poc;
 
 import com.taiji.opc2ecu.core.ExitCodes;
+import com.taiji.opc2ecu.core.CollectionCycle;
+import com.taiji.opc2ecu.core.DatagramChannel;
 import com.taiji.opc2ecu.core.GapSummary;
+import com.taiji.opc2ecu.core.HeartbeatSession;
 import com.taiji.opc2ecu.core.OpcDaClient;
 import com.taiji.opc2ecu.core.OpcDaClientFactory;
 import com.taiji.opc2ecu.core.OpcDaException;
@@ -9,8 +12,11 @@ import com.taiji.opc2ecu.core.OpcDataCallback;
 import com.taiji.opc2ecu.core.OpcReadValue;
 import com.taiji.opc2ecu.core.ProbeConfig;
 import com.taiji.opc2ecu.core.ProbeMode;
+import com.taiji.opc2ecu.core.PointsConfig;
 import com.taiji.opc2ecu.core.ReconnectManager;
 import com.taiji.opc2ecu.core.ReconnectPolicy;
+import com.taiji.opc2ecu.core.UdpDatagramChannel;
+import com.taiji.opc2ecu.core.UdpRecordSender;
 import com.taiji.opc2ecu.utgard.UtgardOpcDaClient;
 
 import java.nio.charset.StandardCharsets;
@@ -19,6 +25,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,6 +49,7 @@ public final class OpcDaProbe {
     static int run(final String[] args, final String password) {
         OpcDaClient directClient = null;
         ReconnectManager reconnectManager = null;
+        HeartbeatSession heartbeat = null;
         Thread shutdownHook = null;
         try {
             final Command command = Command.parse(args);
@@ -51,6 +59,22 @@ public final class OpcDaProbe {
             }
 
             final ProbeConfig config = loadConfig(command.configPath, password, command.mode);
+            if (command.mode == ProbeMode.COLLECT) {
+                final PointsConfig points = loadPointsConfig(command.pointsPath);
+                final DatagramChannel channel = new UdpDatagramChannel(
+                        points.getUdpHost(), points.getUdpPort());
+                heartbeat = new HeartbeatSession(channel, new HeartbeatSession.StateListener() {
+                    @Override public void onOffline() {
+                        System.out.println("[OFFLINE] OPC2ECU UDP peer is offline; business sending continues.");
+                    }
+                    @Override public void onRecovered() {
+                        System.out.println("[RECOVERED] OPC2ECU UDP peer is online.");
+                    }
+                });
+                reconnectManager = createReconnectManager(config, points.getPeriodMillis());
+                runCollection(points, reconnectManager, heartbeat, channel);
+                return ExitCodes.SUCCESS;
+            }
             printTarget(config, command.mode);
             if (command.mode == ProbeMode.CHECK_CONFIG) {
                 System.out.println("[RESULT] Configuration validation succeeded; no network connection was attempted.");
@@ -62,7 +86,7 @@ public final class OpcDaProbe {
             }
 
             if (command.mode == ProbeMode.READ_ITEM) {
-                reconnectManager = createReconnectManager(config);
+                reconnectManager = createReconnectManager(config, config.getPeriodMillis());
                 final AtomicReference<ReconnectManager> shutdownTarget =
                         new AtomicReference<ReconnectManager>(reconnectManager);
                 shutdownHook = new Thread(new Runnable() {
@@ -105,6 +129,9 @@ public final class OpcDaProbe {
             if (reconnectManager != null) {
                 reconnectManager.close();
             }
+            if (heartbeat != null) {
+                heartbeat.close();
+            }
             if (directClient != null) {
                 directClient.disconnect();
             }
@@ -119,10 +146,11 @@ public final class OpcDaProbe {
         }
     }
 
-    private static ReconnectManager createReconnectManager(final ProbeConfig config) {
+    private static ReconnectManager createReconnectManager(
+            final ProbeConfig config, final int periodMillis) {
         final OpcDaClientFactory factory = new OpcDaClientFactory() {
             @Override public OpcDaClient create() {
-                return new UtgardOpcDaClient(config, null);
+                return new UtgardOpcDaClient(config, null, periodMillis);
             }
         };
         final ReconnectPolicy policy = new ReconnectPolicy(
@@ -132,7 +160,7 @@ public final class OpcDaProbe {
         return new ReconnectManager(
                 factory,
                 policy,
-                config.getPeriodMillis(),
+                periodMillis,
                 config.isReconnectEnabled(),
                 new ReconnectManager.GapListener() {
                     @Override public void onGapRecovered(final GapSummary gap) {
@@ -150,7 +178,7 @@ public final class OpcDaProbe {
         final AtomicInteger sequence = new AtomicInteger();
         final Instant connectStart = Instant.now();
         System.out.println("[CONNECT] Connecting to the OPC DA server...");
-        manager.start(new OpcDataCallback() {
+        manager.start(Collections.singletonList(config.getItemId()), new OpcDataCallback() {
             @Override
             public void onData(final OpcReadValue value) {
                 final int number = sequence.incrementAndGet();
@@ -201,6 +229,42 @@ public final class OpcDaProbe {
         System.out.println("[RESULT] OPC DA single-item read verification succeeded.");
     }
 
+    private static void runCollection(
+            final PointsConfig points, final ReconnectManager manager,
+            final HeartbeatSession heartbeat, final DatagramChannel channel) throws Exception {
+        final CountDownLatch stopped = new CountDownLatch(1);
+        final AtomicReference<ReconnectManager> managerTarget =
+                new AtomicReference<ReconnectManager>(manager);
+        final AtomicReference<HeartbeatSession> heartbeatTarget =
+                new AtomicReference<HeartbeatSession>(heartbeat);
+        final Thread hook = new Thread(new Runnable() {
+            @Override public void run() {
+                final ReconnectManager currentManager = managerTarget.getAndSet(null);
+                if (currentManager != null) { currentManager.close(); }
+                final HeartbeatSession currentHeartbeat = heartbeatTarget.getAndSet(null);
+                if (currentHeartbeat != null) { currentHeartbeat.close(); }
+                stopped.countDown();
+            }
+        }, "opc2ecu-collect-shutdown");
+        Runtime.getRuntime().addShutdownHook(hook);
+        try {
+            final UdpRecordSender sender = new UdpRecordSender(channel, points.getMd5Charset());
+            manager.start(points.getItems(), new CollectionCycle(points.getItems(), sender));
+            heartbeat.start();
+            System.out.printf("[START] Collecting %d item(s) every %d ms to %s:%d.%n",
+                    points.getItems().size(), points.getPeriodMillis(),
+                    points.getUdpHost(), points.getUdpPort());
+            while (!stopped.await(250L, TimeUnit.MILLISECONDS)) {
+                manager.checkWatchdog();
+            }
+        } finally {
+            managerTarget.set(null);
+            heartbeatTarget.set(null);
+            try { Runtime.getRuntime().removeShutdownHook(hook); }
+            catch (final IllegalStateException ignored) { }
+        }
+    }
+
     private static void connectWithOutput(final OpcDaClient client) throws Exception {
         final Instant connectStart = Instant.now();
         System.out.println("[CONNECT] Connecting to the OPC DA server...");
@@ -217,6 +281,15 @@ public final class OpcDaProbe {
             throw new IllegalArgumentException(
                     "Unable to read configuration file " + path
                             + ". Check that the path exists and is readable.", e);
+        }
+    }
+
+    private static PointsConfig loadPointsConfig(final String path) {
+        try {
+            return PointsConfig.load(path);
+        } catch (final IOException e) {
+            throw new IllegalArgumentException(
+                    "Unable to read points configuration file " + path, e);
         }
     }
 
@@ -278,6 +351,7 @@ public final class OpcDaProbe {
         System.err.println("  java -jar opcda-probe.jar --list-server [config-file]");
         System.err.println("  java -jar opcda-probe.jar --list-items [config-file]");
         System.err.println("  java -jar opcda-probe.jar --export-catalog <output.json> [config-file]");
+        System.err.println("  java -jar opcda-probe.jar --collect <points.json> [opc.properties]");
         System.err.println("  java -jar opcda-probe.jar --self-test-protocol");
     }
 
@@ -285,15 +359,23 @@ public final class OpcDaProbe {
         private final ProbeMode mode;
         private final String configPath;
         private final String outputPath;
+        private final String pointsPath;
 
         private Command(final ProbeMode mode, final String configPath) {
             this(mode, configPath, null);
         }
 
         private Command(final ProbeMode mode, final String configPath, final String outputPath) {
+            this(mode, configPath, outputPath, null);
+        }
+
+        private Command(
+                final ProbeMode mode, final String configPath,
+                final String outputPath, final String pointsPath) {
             this.mode = mode;
             this.configPath = configPath;
             this.outputPath = outputPath;
+            this.pointsPath = pointsPath;
         }
 
         private static Command parse(final String[] args) {
@@ -325,6 +407,14 @@ public final class OpcDaProbe {
                 }
                 return new Command(ProbeMode.EXPORT_CATALOG,
                         args.length == 3 ? args[2] : DEFAULT_CONFIG, args[1]);
+            }
+            if ("--collect".equals(args[0])) {
+                if (args.length < 2 || args.length > 3) {
+                    throw new IllegalArgumentException(
+                            "--collect requires points.json and optional opc.properties paths");
+                }
+                return new Command(ProbeMode.COLLECT,
+                        args.length == 3 ? args[2] : DEFAULT_CONFIG, null, args[1]);
             }
             throw new IllegalArgumentException("Unknown command or too many arguments");
         }
