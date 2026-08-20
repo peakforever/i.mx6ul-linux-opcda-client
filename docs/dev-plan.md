@@ -7,7 +7,7 @@
 目标:把 POC 变成可回归测试的健壮底座。断线重连(必补)+ 单元测试基建 + 异常场景。
 
 规格:docs/dev-spec-iter1.md
-状态:待 Codex 开工
+状态:开发完成，自动化验收通过；等待 Windows+Matrikon 现场验收
 
 ## 迭代 2:多 Item 采集 + OPC2ECU UDP 发送
 

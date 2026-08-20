@@ -20,3 +20,10 @@ readTimeoutSeconds=30
 # Remote OPCEnum/DCOM socket timeout and Windows authentication mode.
 socketTimeoutMillis=30000
 useNtlmV2=true
+
+# Automatic recovery after an established connection is lost.
+# maxAttempts=0 retries indefinitely; set a positive value to stop after that many attempts.
+reconnect.enabled=true
+reconnect.initialDelayMillis=1000
+reconnect.maxDelayMillis=30000
+reconnect.maxAttempts=0

@@ -64,6 +64,41 @@ RPC 配置错误导致连接长期等待：
 timeout 60s java -jar target/opcda-probe.jar config/opc.properties
 ```
 
+## 断线重连与退出码
+
+默认读取模式建立连接后，会通过回调看门狗检测失联。超过 3 个采样周期未收到
+回调时，客户端释放旧的 Utgard/J-Interop 对象，创建全新的 JISession、Server、
+Group 和 Item，然后按指数退避策略恢复读取。旧会话不会被复用。
+
+```properties
+reconnect.enabled=true
+reconnect.initialDelayMillis=1000
+reconnect.maxDelayMillis=30000
+reconnect.maxAttempts=0
+```
+
+退避从 1 秒开始，每次乘 2，最终延迟不超过 30 秒，并带 ±20% 抖动。
+`reconnect.maxAttempts=0` 表示连接建立后的断线恢复可无限重试。关闭进程时会停止
+重连并释放当前客户端。恢复后输出 `[GAP]` 摘要，包含缺口起止时间及估算漏采数。
+
+进程退出码：
+
+- `0`：成功。
+- `1`：未分类内部错误。
+- `2`：配置错误。
+- `3`：连接或 DCOM 激活失败。
+- `4`：连接建立后的读取或 Item 绑定失败。
+- `5`：等待采样或重连等待超时。
+
+`[CONFIG]`、`[CONNECT]`、`[READ]`、`[GAP]` 和 `[RESULT]` 行保留在 stdout，
+便于脚本解析；诊断信息由 slf4j 输出到 stderr。密码不会写入日志，用户名和域在
+`[CONFIG]` 行中显示为 `<redacted>`。可使用 JVM 参数调整诊断级别：
+
+```bash
+java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug \
+  -jar target/opcda-probe.jar config/opc.properties
+```
+
 ## 通过远程 OPCEnum 列举 Server
 
 如果不知道 OPC Server 的 CLSID，但 Windows 主机已经运行 OPCEnum，而且账号具有
