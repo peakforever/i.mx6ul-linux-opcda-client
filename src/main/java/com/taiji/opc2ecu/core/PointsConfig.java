@@ -126,14 +126,16 @@ public final class PointsConfig {
         if (port < 1 || port > 65535) {
             throw new IllegalArgumentException("udp.port must be between 1 and 65535");
         }
-        final String charsetName = optionalText(udp, "md5Charset", "US-ASCII");
+        final String charsetName = optionalText(udp, "md5Charset", "UTF-8");
         final Charset charset;
-        if ("US-ASCII".equalsIgnoreCase(charsetName)) {
+        if ("UTF-8".equalsIgnoreCase(charsetName)) {
+            charset = StandardCharsets.UTF_8;
+        } else if ("US-ASCII".equalsIgnoreCase(charsetName)) {
             charset = StandardCharsets.US_ASCII;
         } else if ("GBK".equalsIgnoreCase(charsetName)) {
             charset = Charset.forName("GBK");
         } else {
-            throw new IllegalArgumentException("udp.md5Charset must be US-ASCII or GBK");
+            throw new IllegalArgumentException("udp.md5Charset must be UTF-8, US-ASCII, or GBK");
         }
         final JsonNode itemNodes = root.get("items");
         if (itemNodes == null || !itemNodes.isArray() || itemNodes.size() == 0) {
