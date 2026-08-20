@@ -67,17 +67,14 @@ public final class HeartbeatSession implements AutoCloseable {
 
     /** Sends one request; public to permit deterministic state-machine verification. */
     public synchronized long sendHeartbeat() {
-        if (!running && !scheduler.isShutdown()) {
-            // Direct invocation is allowed in unit tests without background threads.
-        }
         final long sessionId = nextSessionId;
         nextSessionId = (nextSessionId + 1L) & UINT32_MASK;
         final byte[] request = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
                 .putInt((int) sessionId).array();
+        awaitingSessionId = sessionId;
+        if (timeoutFuture != null) { timeoutFuture.cancel(false); }
         try {
             channel.send(request);
-            awaitingSessionId = sessionId;
-            if (timeoutFuture != null) { timeoutFuture.cancel(false); }
             timeoutFuture = scheduler.schedule(new Runnable() {
                 @Override public void run() { onTimeout(sessionId); }
             }, RESPONSE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
