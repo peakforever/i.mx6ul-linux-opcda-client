@@ -3,10 +3,10 @@
 本目录用于验证以下最短链路：
 
 ```text
-Linux + Utgard/J-Interop → Windows OPC DA Server → 同步读取一个 Item
+Linux + Utgard/J-Interop → Windows OPC DA Server → 多 Item 采集 → OPC2ECU UDP
 ```
 
-该程序不依赖 Wine，不修改上级目录中的 Windows/MFC 工程，也暂不包含 ECU UDP 转发。
+该程序不依赖 Wine，也不修改任何 Windows/MFC 工程。
 
 ## 构建机要求
 
@@ -33,6 +33,7 @@ target/opcda-probe.jar
 
 ```bash
 cp config/opc.properties.example config/opc.properties
+cp config/points.json.example config/points.json
 ```
 
 填写 OPC Server 地址、Windows 账号、ProgID、CLSID 和一个确定可读的 Item ID。密码不要写入配置文件，通过环境变量提供：
@@ -41,6 +42,10 @@ cp config/opc.properties.example config/opc.properties
 export OPC_PASSWORD='实际密码'
 ```
 
+生产采集的点位、周期、UDP 目标和 MD5 字符集位于 points.json；OPC 连接和
+重连参数仍独立保存在 opc.properties。md5Charset 可省略，默认 US-ASCII，
+现场包含中文路径时可明确配置为 GBK。
+
 ## 运行
 
 ```bash
@@ -48,6 +53,19 @@ java -Djava.awt.headless=true -jar target/opcda-probe.jar config/opc.properties
 ```
 
 程序默认每秒同步读取一次，成功取得 10 个样本后退出。输出包含 Value、Quality 和 Timestamp。
+
+生产模式持续运行到 SIGTERM/SIGINT：
+
+~~~bash
+java -Xms16m -Xmx48m -XX:+UseSerialGC -Djava.awt.headless=true \
+  -jar target/opcda-probe.jar \
+  --collect config/points.json config/opc.properties
+~~~
+
+每个采集周期在收到全部配置点位后生成一个快照，每个 UDP 包最多 48 条记录；
+超过 48 条自动拆包，不跨周期混包。业务包发送失败不重传，心跳判定对端离线时
+业务仍照常发送。心跳固定每 1000 ms 发送一次，500 ms 未应答计一次失败，连续
+3 次失败输出 [OFFLINE]，收到匹配会话 ID 的应答后输出 [RECOVERED]。
 
 只检查配置、不连接 OPC Server：
 
@@ -165,10 +183,10 @@ Group。JSON 不包含 Windows 密码。
 ```bash
 ./runtime/bin/java \
   -Xms16m \
-  -Xmx64m \
+  -Xmx48m \
   -XX:+UseSerialGC \
   -Djava.awt.headless=true \
-  -jar opcda-probe.jar opc.properties
+  -jar opcda-probe.jar --collect points.json opc.properties
 ```
 
 在选择 ARM JRE 前，必须先确认设备的架构、C 库和 hard-float ABI：

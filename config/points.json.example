@@ -1,0 +1,12 @@
+{
+  "periodMillis": 1000,
+  "udp": {
+    "host": "127.0.0.1",
+    "port": 5353,
+    "md5Charset": "US-ASCII"
+  },
+  "items": [
+    "OPCServerDemo.Group01.TAG001",
+    "OPCServerDemo.Group01.TAG002"
+  ]
+}
