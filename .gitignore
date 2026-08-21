@@ -1,4 +1,5 @@
 /config/opc.properties
+/config/points.json
 /target/
 /runtime/
 /output/
