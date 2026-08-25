@@ -223,5 +223,49 @@ sh /home/ecu/opc2ecu/verify-opcda.sh --collect
 2. build-imx6ul-bundle.sh 打部署包(19MB)
 3. 转包:开发机 → 构建机 → ECU /tmp
 4. ECU:解包到 /home/ecu + chown + 传 verify 脚本
-5. export OPC_PASSWORD && sh verify-opcda.sh,目标 PASS=6 FAIL=0
+5. export OPC_PASSWORD && sh verify-opcda.sh,目标 PASS=8 FAIL=0
 6. 通过后决定是否装 systemd 服务托管
+
+---
+
+## 八、新 OPC DA Server 发现流程(用 opc-probe 拿 points.json 参数)
+
+面对一台新的 OPC DA Server,用探测模式拿到 points.json 所需参数。
+
+需人工提供(无法发现):host(Windows IP)、domain、user、password(连接凭据)
+可自动发现:progId/clsid(枚举)、全部点位 + 类型 + 读写权限(导出目录)
+其余字段用默认:socketTimeoutMillis=30000、useNtlmV2=true
+
+第 1 步:枚举 Server 拿 progId/clsid(要求 Windows 侧 OPCEnum 组件权限已配)
+
+export OPC_PASSWORD=***
+java -jar opcda-probe.jar --list-server config/opc.properties
+
+预期:[SERVER 1/1] name=... progId=... clsid=... → 填入 opc.properties
+
+第 2 步:导出完整目录(直连 server,不依赖 OPCEnum)
+
+export OPC_PASSWORD=***
+java -jar opcda-probe.jar --export-catalog output/opc-catalog.json config/opc.properties
+
+输出 JSON:server 段信息 + 每 itemId 的 VARTYPE(规范类型)与 accessRights(读写权限)
+
+第 3 步:筛出 points.json 点位(数值标量 + 可读;Read Error.* / Write Only.* 自动排除)
+
+python3 -c "
+import json
+d=json.load(open('output/opc-catalog.json'))
+num={'VT_I2','VT_I4','VT_R4','VT_R8','VT_UI1','VT_UI2','VT_UI4','VT_I1','VT_I8','VT_UI8','VT_CY','VT_DATE'}
+items=[it['itemId'] for it in d['items'] if it['valid'] and it['typeName'] in num and (it['accessRights']&1)]
+print('\n'.join(items))
+"
+
+第 4 步:items 填入 points.json,precheck 校验点表
+
+export OPC_PASSWORD=***
+java -jar opcda-probe.jar --precheck-points config/points.json
+
+预期:[CONNECT] Connected + 各点位 PASS/FAIL,数值可读点位全部 PASS
+
+注意:若 Windows 侧 OPCEnum 权限未配(第 1 步报 OPC_E_DCOM_ACCESS_DENIED),
+可从 Server 文档/既有环境直接取 progId/clsid 填入 opc.properties,跳过第 1 步走第 2 步。
