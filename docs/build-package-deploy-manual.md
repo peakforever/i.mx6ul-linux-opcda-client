@@ -178,14 +178,17 @@ sh /home/ecu/opc2ecu/verify-opcda.sh
 
 看输出前两行 PASS(Phase 1 离线自测)。密码错误也无所谓,Phase 1 不联网。
 
-### 5.2 在线三步探测(需要 Windows + Matrikon 在线,192.168.1.2)
+### 5.2 在线连接验收(需要 Windows + Matrikon 在线,192.168.1.2)
 
 export OPC_PASSWORD=***
 sh /home/ecu/opc2ecu/verify-opcda.sh
 
 预期:RESULT: PASS=6 FAIL=0
-- Phase 2 三个 PASS:list-server(枚举到 Matrikon.OPC.Simulation.1)/ list-items(103 个)/ read 10 samples
-- Phase 4 PASS:错误密码退出码 3
+- Phase 2 用生产配置 points.json 验收(--precheck-points):连接 + 逐点位读取
+- 判据是 [CONNECT] Connected(连接成功);个别点位 FAIL 是点表问题(如 Matrikon
+  Sine 波形默认关闭),不影响链路结论
+- 注意:若需探测模式(--list-server/--list-items,走 OPCEnum),Windows 侧需同时
+  给 OPCEnum 组件配好 DCOM 权限(生产采集直连 Matrikon,不依赖 OPCEnum)
 
 ### 5.3 数据面(联调阶段,可选,--collect)
 
