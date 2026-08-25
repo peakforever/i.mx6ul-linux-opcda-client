@@ -128,9 +128,11 @@ cd /tmp && tar xzf opc2ecu-imx6ul-armhf.tar.gz -C /home/ecu && chown -R ecu:ecu 
 
 ### 4.2 部署验收脚本(verify-opcda.sh,打包里没有,单独传)
 
-scp -O -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa ~/opcda-deploy/verify-opcda.sh ecu@192.168.1.234:/home/ecu/opc2ecu/
+从仓库取(版本受控,勿用散落拷贝):
 
-(构建机上没有就先把 ~/opcda-deploy/verify-opcda.sh 一并转过去)
+scp -O -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa ~/i.mx6ul-linux-opcda-client/scripts/verify-opcda.sh ecu@192.168.1.234:/home/ecu/opc2ecu/
+
+(构建机上没有就先从仓库拉取该文件再转)
 
 ### 4.3 注册 systemd 服务(可选,联调阶段可先手动跑)
 
