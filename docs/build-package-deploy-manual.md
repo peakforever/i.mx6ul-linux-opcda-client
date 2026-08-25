@@ -85,9 +85,27 @@ tar tzf target/opc2ecu-imx6ul-armhf.tar.gz | grep -E "runtime/bin/java|lib/opcda
 - U 盘/文件共享:把 target/opc2ecu-imx6ul-armhf.tar.gz 拷到构建机
 - scp(构建机可达开发机时):scp ~/i.mx6ul-linux-opcda-client/target/opc2ecu-imx6ul-armhf.tar.gz <构建机用户>@<构建机IP>:/tmp/
 
-然后在构建机上传到 ECU:
+然后在构建机上传到 ECU(注意 SSH 兼容参数,见 3.1):
 
-scp opc2ecu-imx6ul-armhf.tar.gz ecu@192.168.1.234:/tmp/
+scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa opc2ecu-imx6ul-armhf.tar.gz ecu@192.168.1.234:/tmp/
+
+### 3.1 SSH 兼容说明(ECU 只支持 ssh-rsa)
+
+ECU 的 dropbear(2019.78)主机密钥与公钥认证只支持 rsa/dss/ecdsa;而 OpenSSH 8.8+
+默认禁用了 ssh-rsa,直接 scp/ssh 会报 "no matching host key type" 或 "no matching key
+exchange method"。所有连 ECU 的命令都要带两个参数:
+
+  -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa
+
+嫌每次带参数麻烦,可在构建机 ~/.ssh/config 固化(配一次,以后 scp ecu500: 直接用):
+
+Host ecu500
+    HostName 192.168.1.234
+    User ecu
+    HostKeyAlgorithms +ssh-rsa
+    PubkeyAcceptedAlgorithms +ssh-rsa
+
+配好后:scp opc2ecu-imx6ul-armhf.tar.gz ecu500:/tmp/
 
 ---
 
@@ -101,7 +119,7 @@ cd /tmp && tar xzf opc2ecu-imx6ul-armhf.tar.gz -C /home/ecu && chown -R ecu:ecu 
 
 ### 4.2 部署验收脚本(verify-opcda.sh,打包里没有,单独传)
 
-scp ~/opcda-deploy/verify-opcda.sh ecu@192.168.1.234:/home/ecu/opc2ecu/
+scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa ~/opcda-deploy/verify-opcda.sh ecu@192.168.1.234:/home/ecu/opc2ecu/
 
 (构建机上没有就先把 ~/opcda-deploy/verify-opcda.sh 一并转过去)
 
@@ -134,7 +152,7 @@ systemctl daemon-reload && systemctl enable --now opc2ecu.service
 ### 4.4 升级(只换 jar,不动配置)
 
 systemctl stop opc2ecu.service
-scp <新包里的>opcda-probe.jar ecu@192.168.1.234:/tmp/
+scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa <新包里的>opcda-probe.jar ecu@192.168.1.234:/tmp/
 install -m 0644 /tmp/opcda-probe.jar /home/ecu/opc2ecu/lib/ && chown ecu:ecu /home/ecu/opc2ecu/lib/opcda-probe.jar
 systemctl start opc2ecu.service
 
