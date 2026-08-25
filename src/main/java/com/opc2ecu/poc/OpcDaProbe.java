@@ -1,5 +1,6 @@
 package com.opc2ecu.poc;
 
+import com.opc2ecu.core.DiagCode;
 import com.opc2ecu.core.ExitCodes;
 import com.opc2ecu.core.CollectionCycle;
 import com.opc2ecu.core.DatagramChannel;
@@ -138,6 +139,7 @@ public final class OpcDaProbe {
             throw new IllegalStateException("Unsupported command mode: " + command.mode);
         } catch (final Throwable e) {
             final int exitCode = ExitCodes.forException(e);
+            printDiag(e);
             System.err.printf("[ERROR] %s%n", actionableMessage(e, exitCode));
             LOGGER.debug("OPC DA command failed with exit code " + exitCode, e);
             if (exitCode == ExitCodes.CONFIGURATION_ERROR) {
@@ -370,12 +372,35 @@ public final class OpcDaProbe {
             return message + ". Check the properties file and OPC_PASSWORD environment variable.";
         }
         if (exitCode == ExitCodes.CONNECTION_ERROR && message.indexOf("TCP 135") < 0) {
+            if (error instanceof OpcDaException
+                    && ((OpcDaException) error).getDiagCode() != DiagCode.GENERIC_CONNECTION) {
+                return message; // the [DIAG] line carries the specific attribution
+            }
             return message + ". Confirm Windows firewall TCP 135/RPC dynamic ports and DCOM permissions.";
         }
         if (exitCode == ExitCodes.READ_ERROR && message.indexOf("item") < 0) {
             return message + ". Confirm the configured item ID exists and is readable.";
         }
         return message;
+    }
+
+    /** Emits a structured [DIAG] line when a specific attribution is available. */
+    private static void printDiag(final Throwable error) {
+        if (!(error instanceof OpcDaException)) {
+            return;
+        }
+        final DiagCode code = ((OpcDaException) error).getDiagCode();
+        if (code == null || code == DiagCode.GENERIC_CONNECTION) {
+            return;
+        }
+        final StringBuilder line = new StringBuilder("[DIAG] code=").append(code.code())
+                .append(" layer=").append(code.layer());
+        if (code.hresult() != null) {
+            line.append(String.format(" hresult=0x%08X", code.hresult()));
+        }
+        line.append(" detail=\"").append(code.detail())
+                .append("\" hint=\"").append(code.hint()).append('"');
+        System.err.println(line);
     }
 
     private static void selfTestProtocol() {

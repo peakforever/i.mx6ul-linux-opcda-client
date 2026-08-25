@@ -1,5 +1,6 @@
 package com.opc2ecu.utgard;
 
+import com.opc2ecu.core.DiagCode;
 import com.opc2ecu.core.JsonWriter;
 import com.opc2ecu.core.OpcDaClient;
 import com.opc2ecu.core.OpcDaException;
@@ -27,6 +28,7 @@ import java.util.TreeSet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
+import org.jinterop.dcom.common.JIException;
 import org.jinterop.dcom.core.JIComServer;
 import org.jinterop.dcom.core.JISession;
 import org.openscada.opc.dcom.common.Result;
@@ -98,12 +100,31 @@ public final class UtgardOpcDaClient implements OpcDaClient {
             connected = true;
         } catch (final Exception e) {
             connected = false;
-            throw new OpcDaException(
-                    OpcDaException.Kind.CONNECTION,
-                    "OPC DA connection failed. Check OPC_PASSWORD, ProgID/CLSID, DCOM permissions, "
-                            + "and Windows firewall TCP 135/RPC dynamic ports.",
-                    e);
+            throw new OpcDaException(OpcDaException.Kind.CONNECTION, classify(e), e);
         }
+    }
+
+    /**
+     * Attributes a connection failure to the most likely root cause.
+     *
+     * <p>Signal sources, in priority order: the COM HRESULT carried by a
+     * {@link JIException} anywhere in the cause chain (each HRESULT maps to a
+     * distinct DCOM/RPC/registry failure class); otherwise a socket timeout
+     * (the connect hung until {@code rpc.socketTimeout}, typical of NTLM
+     * authentication failure or a black-hole firewall); otherwise generic.
+     */
+    static DiagCode classify(final Throwable error) {
+        Throwable cursor = error;
+        while (cursor != null) {
+            if (cursor instanceof JIException) {
+                return DiagCode.fromHresult(((JIException) cursor).getErrorCode());
+            }
+            if (cursor instanceof java.net.SocketTimeoutException) {
+                return DiagCode.timeout();
+            }
+            cursor = cursor.getCause();
+        }
+        return DiagCode.GENERIC_CONNECTION;
     }
 
     @Override
@@ -372,10 +393,7 @@ public final class UtgardOpcDaClient implements OpcDaClient {
             }
             System.out.println("[RESULT] Remote OPC DA server enumeration succeeded.");
         } catch (final Exception e) {
-            throw new OpcDaException(
-                    OpcDaException.Kind.CONNECTION,
-                    "Remote OPCEnum failed. Check OPC_PASSWORD, DCOM permissions, OPCEnum service, "
-                            + "and Windows firewall TCP 135/RPC dynamic ports.", e);
+            throw new OpcDaException(OpcDaException.Kind.CONNECTION, classify(e), e);
         } finally {
             if (session != null) {
                 JISession.destroySession(session);

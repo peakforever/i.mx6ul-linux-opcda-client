@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import com.opc2ecu.core.DiagCode;
 import com.opc2ecu.core.OpcDaClient;
 import com.opc2ecu.core.OpcDaException;
 import com.opc2ecu.core.OpcDataCallback;
@@ -20,6 +21,7 @@ import com.opc2ecu.core.OpcReadValue;
 import com.opc2ecu.core.PointValidation;
 import com.opc2ecu.core.ProbeConfig;
 
+import org.jinterop.dcom.common.JIException;
 import org.junit.Test;
 
 public class OpcDaProbeTest {
@@ -145,6 +147,28 @@ public class OpcDaProbeTest {
         final CapturedRun run = capturePrecheck(client);
         assertEquals(0, run.exitCode);
         assertTrue(run.stderr.contains("[DEPRECATED]"));
+    }
+
+    @Test public void connectionFailureEmitsDiagLineWithAttribution() throws Exception {
+        final FakeClient client = new FakeClient(Collections.<PointValidation>emptyList());
+        client.connectFailure = new OpcDaException(OpcDaException.Kind.CONNECTION,
+                DiagCode.DCOM_ACCESS_DENIED,
+                new JIException(0x80070005, "Access is denied"));
+        final CapturedRun run = capturePrecheck(client);
+        assertEquals(3, run.exitCode);
+        assertTrue(run.stderr.contains("[DIAG] code=OPC_E_DCOM_ACCESS_DENIED"));
+        assertTrue(run.stderr.contains("hresult=0x80070005"));
+        assertTrue(run.stderr.contains("layer=dcom"));
+        assertFalse(run.stderr.contains("TCP 135")); // specific attribution replaces the generic hint
+    }
+
+    @Test public void connectionFailureWithoutAttributionKeepsGenericHint() throws Exception {
+        final FakeClient client = new FakeClient(Collections.<PointValidation>emptyList());
+        client.connectFailure = new OpcDaException(OpcDaException.Kind.CONNECTION, "offline");
+        final CapturedRun run = capturePrecheck(client);
+        assertEquals(3, run.exitCode);
+        assertFalse(run.stderr.contains("[DIAG]")); // GENERIC_CONNECTION is not emitted
+        assertTrue(run.stderr.contains("TCP 135"));
     }
 
     private static Path writeConfig() throws Exception {
