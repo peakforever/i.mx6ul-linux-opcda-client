@@ -1,6 +1,7 @@
 package com.opc2ecu.core;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
@@ -49,6 +50,26 @@ public class ReconnectManagerTest {
         } catch (final OpcDaException e) {
             assertEquals(OpcDaException.Kind.READ, e.getKind());
             assertEquals(ConnectionState.STOPPED, fixture.manager.getState());
+        }
+    }
+
+    @Test
+    public void attributedConnectFailureIsPropagatedNotRewrapped() {
+        final FakeClient client = new FakeClient(true, false);
+        client.connectException = new OpcDaException(
+                OpcDaException.Kind.CONNECTION, DiagCode.DCOM_ACCESS_DENIED,
+                new Exception("access denied"));
+        final Fixture fixture = fixture(3, client);
+        try {
+            fixture.manager.start(noopCallback());
+            fail("Expected connection failure");
+        } catch (final OpcDaException e) {
+            assertEquals(OpcDaException.Kind.CONNECTION, e.getKind());
+            assertEquals(DiagCode.DCOM_ACCESS_DENIED, e.getDiagCode());
+            assertTrue("attributed message must survive, not the generic firewall hint",
+                    e.getMessage().contains("DCOM"));
+            assertFalse("generic firewall hint must not replace the attribution",
+                    e.getMessage().contains("firewall"));
         }
     }
 
@@ -218,6 +239,7 @@ public class ReconnectManagerTest {
     private static final class FakeClient implements OpcDaClient {
         private final boolean failConnect;
         private final boolean failBind;
+        private Exception connectException;
         private boolean connected;
         private int connectCount;
         private int disconnectCount;
@@ -239,6 +261,7 @@ public class ReconnectManagerTest {
 
         @Override public void connect() throws Exception {
             connectCount++;
+            if (connectException != null) { throw connectException; }
             if (failConnect) { throw new Exception("connect failed"); }
             connected = true;
         }

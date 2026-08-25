@@ -132,6 +132,10 @@ public final class ReconnectManager implements AutoCloseable {
                     && ((OpcDaException) e).getKind() == OpcDaException.Kind.READ) {
                 throw (OpcDaException) e;
             }
+            if (e instanceof OpcDaException
+                    && ((OpcDaException) e).getDiagCode() != DiagCode.GENERIC_CONNECTION) {
+                throw (OpcDaException) e; // already attributed by the client implementation
+            }
             throw new OpcDaException(
                     OpcDaException.Kind.CONNECTION,
                     "Unable to connect to the OPC DA server. Check OPC_PASSWORD, ProgID/CLSID, "
