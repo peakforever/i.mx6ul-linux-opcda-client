@@ -35,7 +35,7 @@
 - `mvn test` 全绿;--self-test-protocol 保留(作为实机冒烟)
 
 ### T2 连接抽象层
-- 新增 com.taiji.opc2ecu.core.OpcDaClient(接口):
+- 新增 com.opc2ecu.core.OpcDaClient(接口):
   connect() / disconnect() / isConnected() / browseItems() / exportCatalog() /
   readItem(itemId) / bindSyncRead(callback) / unbind()
 - 新增 UtgardOpcDaClient(实现):把现有 OpcDaProbe 里的
