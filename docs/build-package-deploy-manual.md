@@ -87,9 +87,9 @@ tar tzf target/opc2ecu-imx6ul-armhf.tar.gz | grep -E "runtime/bin/java|lib/opcda
 
 然后在构建机上传到 ECU(注意 SSH 兼容参数,见 3.1):
 
-scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa opc2ecu-imx6ul-armhf.tar.gz ecu@192.168.1.234:/tmp/
+scp -O -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa opc2ecu-imx6ul-armhf.tar.gz ecu@192.168.1.234:/tmp/
 
-### 3.1 SSH 兼容说明(ECU 只支持 ssh-rsa)
+### 3.1 SSH 兼容说明(ECU 只支持 ssh-rsa,且无 SFTP)
 
 ECU 的 dropbear(2019.78)主机密钥与公钥认证只支持 rsa/dss/ecdsa;而 OpenSSH 8.8+
 默认禁用了 ssh-rsa,直接 scp/ssh 会报 "no matching host key type" 或 "no matching key
@@ -97,7 +97,16 @@ exchange method"。所有连 ECU 的命令都要带两个参数:
 
   -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa
 
-嫌每次带参数麻烦,可在构建机 ~/.ssh/config 固化(配一次,以后 scp ecu500: 直接用):
+另一个坑:OpenSSH 9.0+ 的 scp 默认走 SFTP 子系统,而 dropbear 没有 sftp-server,
+会报 "/usr/libexec/sftp-server: No such file or directory" 后连接关闭。必须加 -O
+强制传统 SCP 协议:
+
+  scp -O -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa <文件> ecu@192.168.1.234:<路径>
+
+(连接时的 "post-quantum key exchange" 警告是无害提示,可忽略。)
+
+嫌每次带参数麻烦,可在构建机 ~/.ssh/config 固化密钥参数(注意 -O 是命令行开关,
+config 里没有对应项,scp 仍需带 -O):
 
 Host ecu500
     HostName 192.168.1.234
@@ -105,7 +114,7 @@ Host ecu500
     HostKeyAlgorithms +ssh-rsa
     PubkeyAcceptedAlgorithms +ssh-rsa
 
-配好后:scp opc2ecu-imx6ul-armhf.tar.gz ecu500:/tmp/
+配好后:scp -O opc2ecu-imx6ul-armhf.tar.gz ecu500:/tmp/
 
 ---
 
@@ -119,7 +128,7 @@ cd /tmp && tar xzf opc2ecu-imx6ul-armhf.tar.gz -C /home/ecu && chown -R ecu:ecu 
 
 ### 4.2 部署验收脚本(verify-opcda.sh,打包里没有,单独传)
 
-scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa ~/opcda-deploy/verify-opcda.sh ecu@192.168.1.234:/home/ecu/opc2ecu/
+scp -O -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa ~/opcda-deploy/verify-opcda.sh ecu@192.168.1.234:/home/ecu/opc2ecu/
 
 (构建机上没有就先把 ~/opcda-deploy/verify-opcda.sh 一并转过去)
 
@@ -152,7 +161,7 @@ systemctl daemon-reload && systemctl enable --now opc2ecu.service
 ### 4.4 升级(只换 jar,不动配置)
 
 systemctl stop opc2ecu.service
-scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa <新包里的>opcda-probe.jar ecu@192.168.1.234:/tmp/
+scp -O -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa <新包里的>opcda-probe.jar ecu@192.168.1.234:/tmp/
 install -m 0644 /tmp/opcda-probe.jar /home/ecu/opc2ecu/lib/ && chown ecu:ecu /home/ecu/opc2ecu/lib/opcda-probe.jar
 systemctl start opc2ecu.service
 
