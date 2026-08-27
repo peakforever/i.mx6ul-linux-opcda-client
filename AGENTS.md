@@ -14,6 +14,19 @@ scripts/build-imx6ul-bundle.sh   # ARM 部署包打包(target/opc2ecu-imx6ul-arm
 - 工具链:JDK17/Maven3.9 在 ~/.local/bin
 - 首次构建需访问 Maven Central(代理兜底:export HTTPS_PROXY=http://127.0.0.1:7890)
 
+## 关键事实(Utgard/J-Interop)
+
+- **Utgard `ItemState.getValue()` 返回 `JIVariant`,不是解包后的 Java 数值**。必须调用
+  `variant.getObject()`(标量→Float/Double/Integer 等;VT_ARRAY→数组;失败抛 JIException)。
+  2026-08-27 Kepware 现场缺陷:JIVariant 未解包直接进 UDP 编码,`numericValue`
+  只接受 `Number` 抛异常,且旧实现"整轮阻断"——一个坏点导致当轮全部点位不发。
+  修复(d5702d9):Utgard 边界 `unwrapScalar()` 统一解包 + `UdpRecordSender` 单点
+  容错(坏点跳过,其余照发)。任何新增 Utgard 取值路径都必须过解包。
+- `[[123.0]]` 这样的日志值 = JIVariant.toString() 输出,内部是标量 123.0,
+  **不是数组**。真 VT_ARRAY 在 `unwrapScalar` 后保持非数值,由 sender 跳过(不隐式取首元素)。
+- J-Interop 对无符号类型(VT_UI*)用 `IJIUnsigned`,货币(VT_CY)用 `JICurrency`,
+  需要额外转换(unwrapScalar 已处理)。
+
 ## 配置与契约
 
 - `config/points.json` — 生产采集与点位预检配置。**含明文密码,权限 600,已 gitignore,不得提交、不得写入日志**
