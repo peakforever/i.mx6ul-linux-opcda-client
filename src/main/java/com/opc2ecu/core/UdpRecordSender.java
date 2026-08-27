@@ -18,6 +18,7 @@ public final class UdpRecordSender {
     private final Charset charset;
     private final AtomicLong packetsSent = new AtomicLong();
     private final AtomicLong recordsSent = new AtomicLong();
+    private final AtomicLong recordsSkipped = new AtomicLong();
     private final AtomicLong sendFailures = new AtomicLong();
 
     public UdpRecordSender(final DatagramChannel channel, final Charset charset) {
@@ -34,9 +35,14 @@ public final class UdpRecordSender {
         }
         final List<byte[]> records = new ArrayList<byte[]>(values.size());
         for (final OpcReadValue value : values) {
-            records.add(EcuRecordCodec.encode(
-                    value.getItemId(), charset, numericValue(value.getValue()), unixSeconds(value),
-                    value.getQuality() & 0xffff));
+            try {
+                records.add(EcuRecordCodec.encode(
+                        value.getItemId(), charset, numericValue(value.getValue()), unixSeconds(value),
+                        value.getQuality() & 0xffff));
+            } catch (final IllegalArgumentException e) {
+                recordsSkipped.incrementAndGet();
+                LOGGER.warn("OPC record skipped; item={} reason={}", value.getItemId(), e.getMessage());
+            }
         }
         for (int offset = 0; offset < records.size(); offset += EcuRecordCodec.MAX_RECORDS_PER_DATAGRAM) {
             final int count = Math.min(EcuRecordCodec.MAX_RECORDS_PER_DATAGRAM, records.size() - offset);
@@ -69,5 +75,6 @@ public final class UdpRecordSender {
 
     public long getPacketsSent() { return packetsSent.get(); }
     public long getRecordsSent() { return recordsSent.get(); }
+    public long getRecordsSkipped() { return recordsSkipped.get(); }
     public long getSendFailures() { return sendFailures.get(); }
 }

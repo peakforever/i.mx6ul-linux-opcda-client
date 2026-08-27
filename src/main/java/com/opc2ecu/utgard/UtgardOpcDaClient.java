@@ -31,6 +31,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import org.jinterop.dcom.common.JIException;
 import org.jinterop.dcom.core.JIComServer;
 import org.jinterop.dcom.core.JISession;
+import org.jinterop.dcom.core.IJIUnsigned;
+import org.jinterop.dcom.core.JICurrency;
+import org.jinterop.dcom.core.JIVariant;
 import org.openscada.opc.dcom.common.Result;
 import org.openscada.opc.dcom.da.OPCITEMRESULT;
 import org.openscada.opc.dcom.da.OPCSERVERSTATUS;
@@ -259,9 +262,33 @@ public final class UtgardOpcDaClient implements OpcDaClient {
     private static OpcReadValue convert(final Item item, final ItemState state) {
         return new OpcReadValue(
                 item.getId(),
-                state.getValue(),
+                unwrapScalar(state.getValue()),
                 state.getQuality() == null ? 0 : state.getQuality().intValue() & 0xffff,
                 state.getTimestamp());
+    }
+
+    /** Converts a J-Interop scalar VARIANT to the Java value used by the core layer. */
+    static Object unwrapScalar(final JIVariant variant) {
+        if (variant == null) {
+            return null;
+        }
+        try {
+            final Object value = variant.getObject();
+            if (value instanceof IJIUnsigned) {
+                return ((IJIUnsigned) value).getValue();
+            }
+            if (value instanceof JICurrency) {
+                final JICurrency currency = (JICurrency) value;
+                return java.math.BigDecimal.valueOf(currency.getUnits())
+                        .add(java.math.BigDecimal.valueOf(currency.getFractionalUnits(), 4));
+            }
+            return value;
+        } catch (final JIException e) {
+            // Preserve the value as non-numeric so the sender can isolate this point
+            // without terminating the callback or suppressing the rest of the snapshot.
+            LOGGER.warn("Unable to unwrap OPC VARIANT; point will be skipped for this cycle", e);
+            return variant;
+        }
     }
 
     private static OpcDaException readException(final String action, final Throwable cause) {
