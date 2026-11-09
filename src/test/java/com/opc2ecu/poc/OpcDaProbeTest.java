@@ -81,6 +81,15 @@ public class OpcDaProbeTest {
         assertTrue(run.stdout.contains("[PRECHECK] summary passed=2 failed=0"));
     }
 
+    @Test public void precheckBooleanPointPasses() throws Exception {
+        final FakeClient client = new FakeClient(Collections.singletonList(
+                new PointValidation("a", true, 11)));
+        final CapturedRun run = capturePrecheck(client);
+        assertEquals(0, run.exitCode);
+        assertTrue(run.stdout.contains("item=a result=PASS reason=ok"));
+        assertTrue(run.stdout.contains("summary passed=1 failed=0"));
+    }
+
     @Test public void precheckUnreadablePointReturnsFour() throws Exception {
         final FakeClient client = new FakeClient(Arrays.asList(
                 new PointValidation("a", false, 0), new PointValidation("b", true, 3)));
@@ -160,6 +169,33 @@ public class OpcDaProbeTest {
         assertTrue(run.stderr.contains("hresult=0x80070005"));
         assertTrue(run.stderr.contains("layer=dcom"));
         assertFalse(run.stderr.contains("TCP 135")); // specific attribution replaces the generic hint
+    }
+
+    @Test public void unknownConnectionFailurePreservesEvidenceWithoutSecretMessage() throws Exception {
+        final FakeClient client = new FakeClient(Collections.<PointValidation>emptyList());
+        client.connectFailure = new OpcDaException(OpcDaException.Kind.CONNECTION,
+                DiagCode.UNKNOWN, new JIException(0x81234567, "password=private-secret"),
+                "server-connect");
+        final CapturedRun run = capturePrecheck(client);
+        assertEquals(3, run.exitCode);
+        assertTrue(run.stderr.contains("rawCode=0x81234567"));
+        assertTrue(run.stderr.contains("stage=server-connect"));
+        assertTrue(run.stderr.contains("org.jinterop.dcom.common.JIException"));
+        assertFalse(run.stderr.contains("private-secret"));
+        assertFalse(run.stderr.contains("Unexpected failure"));
+    }
+
+    @Test public void invalidActivationExperimentReturnsConfigurationError() throws Exception {
+        final String key = "opc2ecu.activationOmitLegacyTail";
+        final String previous = System.getProperty(key);
+        try {
+            System.setProperty(key, "invalid");
+            final CapturedRun run = capture(new String[] { "--self-test-protocol" }, null);
+            assertEquals(2, run.exitCode);
+            assertTrue(run.stderr.contains(key + " must be true or false"));
+        } finally {
+            if (previous == null) System.clearProperty(key); else System.setProperty(key, previous);
+        }
     }
 
     @Test public void connectionFailureWithoutAttributionKeepsGenericHint() throws Exception {
