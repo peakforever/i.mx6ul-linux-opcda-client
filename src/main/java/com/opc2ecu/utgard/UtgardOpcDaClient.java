@@ -88,6 +88,7 @@ public final class UtgardOpcDaClient implements OpcDaClient {
         if (connected) {
             return;
         }
+        String stage = "initial-activation-security";
         try {
             enableInitialActivationSessionSecurity();
             System.setProperty("rpc.socketTimeout", Integer.toString(config.getSocketTimeoutMillis()));
@@ -98,12 +99,14 @@ public final class UtgardOpcDaClient implements OpcDaClient {
             connection.setPassword(config.getPassword());
             connection.setProgId(config.getProgId());
             connection.setClsid(config.getClsid());
+            stage = "server-create";
             server = new Server(connection, executor);
+            stage = "server-connect";
             server.connect();
             connected = true;
         } catch (final Exception e) {
             connected = false;
-            throw new OpcDaException(OpcDaException.Kind.CONNECTION, classify(e), e);
+            throw new OpcDaException(OpcDaException.Kind.CONNECTION, classify(e), e, stage);
         }
     }
 
@@ -118,16 +121,27 @@ public final class UtgardOpcDaClient implements OpcDaClient {
      */
     static DiagCode classify(final Throwable error) {
         Throwable cursor = error;
-        while (cursor != null) {
+        DiagCode fallback = DiagCode.GENERIC_CONNECTION;
+        final Set<Throwable> seen = java.util.Collections.newSetFromMap(
+                new java.util.IdentityHashMap<Throwable, Boolean>());
+        while (cursor != null && seen.add(cursor)) {
             if (cursor instanceof JIException) {
-                return DiagCode.fromHresult(((JIException) cursor).getErrorCode());
+                final DiagCode code = DiagCode.fromHresult(((JIException) cursor).getErrorCode());
+                if (code != DiagCode.UNKNOWN) { return code; }
+                if (fallback == DiagCode.GENERIC_CONNECTION) { fallback = code; }
             }
             if (cursor instanceof java.net.SocketTimeoutException) {
-                return DiagCode.timeout();
+                fallback = DiagCode.timeout();
+            } else if (cursor instanceof java.net.UnknownHostException) {
+                fallback = DiagCode.HOST_RESOLUTION_FAILED;
+            } else if (cursor instanceof java.net.NoRouteToHostException) {
+                fallback = DiagCode.HOST_UNREACHABLE;
+            } else if (cursor instanceof java.net.ConnectException) {
+                fallback = DiagCode.SOCKET_CONNECT_FAILED;
             }
             cursor = cursor.getCause();
         }
-        return DiagCode.GENERIC_CONNECTION;
+        return fallback;
     }
 
     @Override
@@ -420,7 +434,7 @@ public final class UtgardOpcDaClient implements OpcDaClient {
             }
             System.out.println("[RESULT] Remote OPC DA server enumeration succeeded.");
         } catch (final Exception e) {
-            throw new OpcDaException(OpcDaException.Kind.CONNECTION, classify(e), e);
+            throw new OpcDaException(OpcDaException.Kind.CONNECTION, classify(e), e, "opcenum-list");
         } finally {
             if (session != null) {
                 JISession.destroySession(session);

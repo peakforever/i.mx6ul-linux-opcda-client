@@ -64,6 +64,7 @@ public final class OpcDaProbe {
         HeartbeatSession heartbeat = null;
         Thread shutdownHook = null;
         try {
+            com.opc2ecu.utgard.ActivationTrace.validateProperty();
             final Command command = Command.parse(args);
             if (command.mode == ProbeMode.SELF_TEST_PROTOCOL) {
                 selfTestProtocol();

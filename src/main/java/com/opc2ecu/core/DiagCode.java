@@ -12,7 +12,26 @@ package com.opc2ecu.core;
 public enum DiagCode {
 
     /** No attribution possible / unexpected failure. */
-    UNKNOWN(null, "generic", "Unexpected failure", "Inspect the full stack trace in debug logs."),
+    UNKNOWN(null, "generic", "Unmapped J-Interop error code; root cause not determined",
+            "Use rawCode, stage and causes in [ERROR] to investigate; correlate with Windows event logs."),
+
+    HOST_RESOLUTION_FAILED(null, "network", "Host name resolution failed",
+            "Verify the configured host and ECU DNS/hosts resolution."),
+
+    HOST_UNREACHABLE(null, "network", "TCP connect failed: host/network unreachable (NoRouteToHostException)",
+            "Check the actual RPC destination address, ECU route and neighbor reachability, and firewall rejects. "
+                    + "This exception alone does not identify a missing route versus an unreachable/rejected destination."),
+
+    SOCKET_CONNECT_FAILED(null, "network", "TCP connection could not be established",
+            "Check target listener, address, routing and firewall; this alone does not prove authentication failure."),
+
+    /** Remote activation can return this HRESULT before any OPC item read. */
+    RPC_INVALID_HEADER(
+            0x80010111, "dcom",
+            "RPC_E_INVALID_HEADER: OLE reported an invalid packet header",
+            "If causes includes JIRemActivation.read, remote activation returned this HRESULT before item reads. "
+                    + "Correlate Windows DCOM events with an RPC trace; inspect client/server protocol compatibility. "
+                    + "This code alone does not establish which header field failed or prove authentication succeeded."),
 
     /** 0x80070005 E_ACCESSDENIED: DCOM launch/activation/access permission or credentials. */
     DCOM_ACCESS_DENIED(

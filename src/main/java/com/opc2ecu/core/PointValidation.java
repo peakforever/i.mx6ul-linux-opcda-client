@@ -24,13 +24,14 @@ public final class PointValidation {
         return isNumericVarType(canonicalDataType);
     }
 
-    /** Numeric scalar VARTYPE values accepted by the OPC2ECU double-value protocol. */
+    /** Scalar VARTYPE values encodable as numbers (including Boolean 1/0), accepted by the OPC2ECU double-value protocol. */
     public static boolean isNumericVarType(final int varType) {
         switch (varType & 0xffff) {
             case 2:  // VT_I2
             case 3:  // VT_I4
             case 4:  // VT_R4
             case 5:  // VT_R8
+            case 11: // VT_BOOL: true -> 1.0, false -> 0.0
             case 6:  // VT_CY
             case 16: // VT_I1
             case 17: // VT_UI1

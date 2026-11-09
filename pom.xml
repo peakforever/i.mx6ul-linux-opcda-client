@@ -59,6 +59,15 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <resource>
+                <directory>src/main/java</directory>
+                <targetPath>META-INF/opc2ecu-patches</targetPath>
+                <includes><include>org/jinterop/dcom/core/JIRemActivation.java</include>
+                    <include>com/opc2ecu/utgard/ActivationTrace.java</include></includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -84,6 +93,12 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <finalName>opcda-probe</finalName>
                             <filters>
+                                <filter>
+                                    <artifact>org.openscada.jinterop:org.openscada.jinterop.core</artifact>
+                                    <excludes>
+                                        <exclude>org/jinterop/dcom/core/JIRemActivation.class</exclude>
+                                    </excludes>
+                                </filter>
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>

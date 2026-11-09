@@ -63,6 +63,9 @@ public final class UdpRecordSender {
     }
 
     private static double numericValue(final Object value) {
+        if (value instanceof Boolean) {
+            return ((Boolean) value).booleanValue() ? 1.0d : 0.0d;
+        }
         if (!(value instanceof Number)) {
             throw new IllegalArgumentException("OPC value is not numeric: " + value);
         }
