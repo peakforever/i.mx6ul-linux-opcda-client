@@ -39,7 +39,8 @@
      - 存在且可读:validateItems 返回 valid
      - 数值类型:OPCITEMRESULT.getCanonicalDataType() 判定——
        数值:VT_I1/I2/I4/I8/UI1/UI2/UI4/UI8/R4/R8/CY(2,3,4,5,6,16,17,18,19,20,21)
-       非数值:VT_BSTR/VT_BOOL/VT_DATE/VT_ARRAY* 等其余类型 → FAIL(non-numeric)
+       布尔:VT_BOOL(11)，按 true → 1.0、false → 0.0 编码 → PASS
+       非数值:VT_BSTR/VT_DATE/VT_ARRAY* 等其余类型 → FAIL(non-numeric)
   4. 输出报告(机器可读):
      [PRECHECK i/n] item=... result=PASS|FAIL reason=<ok|not-readable|non-numeric>
      [PRECHECK] summary passed=N failed=M
@@ -76,3 +77,38 @@
 
 - 代码 + 测试(Codex 提交,英文 summary,功能/测试/文档分 commit)
 - 推 origin feat/precheck-points
+
+## 布尔点支持补充（2026-09-17，用户已确认）
+
+- 目标：布尔标签可以预检通过并上传，true → 1.0、false → 0.0。
+- 实现：Utgard 继续解包为 Boolean；UDP 发送边界转换为 double；预检接受标量 VT_BOOL。
+- 协议：沿用 30 字节小端记录，MD5、时间戳和 quality 保持原规则，无新增配置项。
+- 边界：字符串（包括 "true"）、null、数组（包括布尔数组）仍跳过，不隐式转换。
+- 缺陷案例 BOOL-20260917：现场 tag_bool=true、Boolean1=false 均出现
+  `OPC record skipped ... OPC value is not numeric`，导致布尔点没有业务记录。
+  根因是 sender 仅接受 Number，预检也排除了 VT_BOOL。
+- 验收：真实 JIVariant 布尔解包；VT_BOOL 预检 PASS/退出码 0；布尔数组预检拒绝；
+  混合周期中 true/false/数值的实际报文字节分别解码为 1.0/0.0/原值，
+  时间戳和 quality 保留，字符串/null/数组跳过且不阻断有效记录。
+- 开发门禁：本节记录规格、授权、缺陷案例与验收标准；当前环境未找到
+  dev-gate-checklist 技能文件，按仓库现有规格文档结构补充。
+
+## 连接诊断补充（2026-09-17）
+
+- 缺陷案例 DIAG-20260917：未映射的 JIException 只输出 UNKNOWN/Unexpected failure，
+  丢失原始错误码；分类遍历提前退出，可能掩盖内层超时或已知 HRESULT。
+- 规格：未知代码继续遍历 cause；普通 ERROR 保留阶段、异常链类型、原始十六进制
+  错误码及每层首个堆栈位置。异常自由文本不复制进该摘要，避免暴露凭据。
+- 阶段仅报告程序可观察到的 security/server-create/server-connect/opcenum-list，
+  不声称能分辨库内部所有 DCOM 步骤；未知错误明确标注根因未确定。
+- 验收：未知包装异常不掩盖内层已知 HRESULT/超时；DNS/TCP 异常分类；普通 CLI
+  输出保留未知原码和阶段，摘要不泄漏模拟密码。保持已有退出码。
+
+- 现场证据 DIAG-20260917-B：0x80010111 = RPC_E_INVALID_HEADER（Microsoft COM
+  Error Codes）。本项目 J-Interop 2.1.8 字节码/行号确认 JIRemActivation.read:225
+  在读取响应 HRESULT 后因非零抛异常，属于远程激活失败，不能当作点位值解码失败，
+  也不能由此证明认证成功。新增明确映射及回归测试；具体非法字段需服务端日志/抓包。
+
+- 现场证据 DIAG-20260917-C：JIException(0x8001FFFF) 包装 NoRouteToHostException，
+  分类应为 HOST_UNREACHABLE/network，保留原始错误码；不能据此断言密码错误、
+  缺失路由或具体 TCP 端口。新增对应异常链回归测试。
