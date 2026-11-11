@@ -91,7 +91,7 @@ SHA-256: 48896cc85888bf009072efde43701db9e8ce5b7cb355aeeaed5cf8331b9c762f
 `target/opcda-probe.jar` 约 3.8 MiB，部署目录合计约 25 MiB。构建部署包：
 
 ```bash
-scripts/build-imx6ul-bundle.sh /tmp/zulu8-armhf-cp1.tar.gz
+scripts/build-imx6ul-bundle.sh
 ```
 
 部署时将压缩包暂存到设备的 tmpfs，然后解压到 `/home/ecu`，不占用 `/data`：

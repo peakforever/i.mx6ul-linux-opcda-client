@@ -6,7 +6,7 @@ Linux + Utgard/J-Interop → Windows OPC DA Server → OPC2ECU UDP 最短链路�
 
 ```bash
 mvn clean package        # 构建(JDK 8+, Maven 3.6+;产物 target/opcda-probe.jar 等)
-mvn test                 # 测试套件(当前 111 个,全绿)
+mvn test                 # 测试套件(当前 175 个,全绿)
 scripts/build-imx6ul-bundle.sh   # ARM 部署包打包(target/opc2ecu-imx6ul-armhf.tar.gz)
 ```
 
@@ -27,6 +27,8 @@ scripts/build-imx6ul-bundle.sh   # ARM 部署包打包(target/opc2ecu-imx6ul-arm
 - J-Interop 对无符号类型(VT_UI*)用 `IJIUnsigned`,货币(VT_CY)用 `JICurrency`,
   需要额外转换(unwrapScalar 已处理)。
 
+- 2026-11-11 用户确认：单点缺失/异常不得阻断其余点采集转发。采集按实际读取轮次发送本轮可用点，不补旧值；规格见 `docs/dev-spec-point-isolation.md`。
+
 ## 配置与契约
 
 - `config/points.json` — 生产采集与点位预检配置。**含明文密码,权限 600,已 gitignore,不得提交、不得写入日志**
@@ -38,7 +40,7 @@ scripts/build-imx6ul-bundle.sh   # ARM 部署包打包(target/opc2ecu-imx6ul-arm
 
 - `docs/opc2ecu-deployment.md` — opc2ecu 部署(Yocto 集成、systemd、运行需求)
 - `docs/opc-server-windows-deploy.md` — Windows OPC DA Server 远程 DCOM 部署(测试用)
-- `docs/STATUS-2026-08-20.md` — 状态与待办(契约确认、5353 接收端部署)
+- `docs/STATUS-2026-11-11.md` — 当前状态、优化验证与待办
 
 ## 工作约定
 

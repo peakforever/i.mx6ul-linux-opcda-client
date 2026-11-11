@@ -283,9 +283,29 @@ public final class OpcDaProbe {
             System.out.printf("[START] Collecting %d item(s) every %d ms to %s:%d.%n",
                     points.getItems().size(), points.getPeriodMillis(),
                     points.getUdpHost(), points.getUdpPort());
+            long lastSummaryNanos = System.nanoTime();
+            long previousPackets = 0L;
+            long previousRecords = 0L;
             while (!stopped.await(250L, TimeUnit.MILLISECONDS)) {
                 manager.checkWatchdog();
                 cycle.checkWatchdog();
+                final long nowNanos = System.nanoTime();
+                if (nowNanos - lastSummaryNanos >= TimeUnit.SECONDS.toNanos(60L)) {
+                    final long packets = sender.getPacketsSent();
+                    final long records = sender.getRecordsSent();
+                    LOGGER.info("Collection status; connection={} lastSnapshotAt={} snapshotAgeMillis={} "
+                                    + "incompleteEpisodes={} lastReadItems={}/{} packetsSentDelta={} "
+                                    + "recordsSentDelta={} recordsSkipped={} sendFailures={} heartbeatOnline={} "
+                                    + "(sent means local send success, not delivery)",
+                            manager.getState(), cycle.getLastSnapshotAt(),
+                            Math.max(0L, System.currentTimeMillis() - cycle.getLastSnapshotAt()),
+                            cycle.getSnapshotStalls(), cycle.getLastCycleItemCount(), points.getItems().size(),
+                            packets - previousPackets, records - previousRecords, sender.getRecordsSkipped(),
+                            sender.getSendFailures(), heartbeat.isOnline());
+                    previousPackets = packets;
+                    previousRecords = records;
+                    lastSummaryNanos = nowNanos;
+                }
             }
         } finally {
             managerTarget.set(null);

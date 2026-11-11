@@ -49,20 +49,26 @@ mvn clean package
 
 ### 2.1 准备 JRE 压缩包(只需一次,后续复用)
 
-下载 Zulu Embedded 8 compact1 ARM32(14.2MB):
+在项目根目录下载 Zulu Embedded 8 compact1 ARM32(14.2MB)到 runtime/；该目录已被 Git 忽略：
 
-curl -fSL -x http://127.0.0.1:7890 -o /tmp/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz "https://cdn.azul.com/zulu-embedded/bin/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz"
+mkdir -p runtime
+
+curl -fSL -x http://127.0.0.1:7890 -o runtime/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz "https://cdn.azul.com/zulu-embedded/bin/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz"
 
 校验 SHA-256(必须等于下面这个值,不一致则丢弃重下):
 
-sha256sum /tmp/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz
+sha256sum runtime/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz
 
 预期:48896cc85888bf009072efde43701db9e8ce5b7cb355aeeaed5cf8331b9c762f
 
 ### 2.2 打包命令
 
 cd ~/i.mx6ul-linux-opcda-client
-sh scripts/build-imx6ul-bundle.sh /tmp/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz
+sh scripts/build-imx6ul-bundle.sh
+
+脚本默认使用项目 runtime/ 下上述固定版本，无需参数；也可传入一个压缩包路径覆盖默认位置，SHA-256 校验保持不变。
+
+部署包包含明文凭据。脚本将包内 points.json 和最终压缩包权限固定为 600；打包成功后原子替换输出。临时文件使用私有权限。
 
 ### 2.3 预期与判读
 

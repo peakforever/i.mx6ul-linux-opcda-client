@@ -2,14 +2,17 @@
 
 set -eu
 
-if [ "$#" -ne 1 ]; then
-    printf 'Usage: %s <armhf-jre.tar.gz>\n' "$0" >&2
+# All temporary files and the credential-bearing archive are private.
+umask 077
+
+if [ "$#" -gt 1 ]; then
+    printf 'Usage: %s [armhf-jre.tar.gz]\n' "$0" >&2
     exit 2
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-RUNTIME_ARCHIVE=$1
+RUNTIME_ARCHIVE=${1:-"$PROJECT_DIR/runtime/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz"}
 EXPECTED_SHA256=48896cc85888bf009072efde43701db9e8ce5b7cb355aeeaed5cf8331b9c762f
 OUTPUT="$PROJECT_DIR/target/opc2ecu-imx6ul-armhf.tar.gz"
 
@@ -29,10 +32,15 @@ if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
 fi
 
 STAGING=$(mktemp -d /tmp/opc2ecu-imx6ul.XXXXXX)
+BUNDLE_TMP=
 cleanup() {
+    if [ -n "$BUNDLE_TMP" ]; then rm -f "$BUNDLE_TMP"; fi
     rm -rf "$STAGING"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+BUNDLE_TMP=$(mktemp "$PROJECT_DIR/target/.opc2ecu-bundle.XXXXXX")
 
 mkdir -p "$STAGING/extract" "$STAGING/opc2ecu/bin" \
     "$STAGING/opc2ecu/config" "$STAGING/opc2ecu/lib"
@@ -49,8 +57,11 @@ cp "$PROJECT_DIR/config/points.json" "$STAGING/opc2ecu/config/points.json"
 cp "$PROJECT_DIR/config/opc.properties" "$STAGING/opc2ecu/config/opc.properties"
 cp "$SCRIPT_DIR/opc2ecu-launcher.sh" "$STAGING/opc2ecu/bin/opc2ecu"
 chmod +x "$STAGING/opc2ecu/bin/opc2ecu"
+chmod 600 "$STAGING/opc2ecu/config/points.json"
 
-tar -czf "$OUTPUT" -C "$STAGING" opc2ecu
+tar -czf "$BUNDLE_TMP" -C "$STAGING" opc2ecu
+chmod 600 "$BUNDLE_TMP"
+mv -f "$BUNDLE_TMP" "$OUTPUT"
 printf '[BUNDLE] %s\n' "$OUTPUT"
 du -h "$OUTPUT"
 sha256sum "$OUTPUT"

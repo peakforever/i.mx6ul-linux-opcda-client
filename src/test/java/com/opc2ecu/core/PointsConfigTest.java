@@ -68,6 +68,14 @@ public class PointsConfigTest {
     @Test(expected=IllegalArgumentException.class) public void rejectsReconnectMaxBelowInitial() throws Exception {
         parse(v2("\"progId\":\"id\"", ",\"reconnect\":{\"initialDelayMillis\":2000,\"maxDelayMillis\":1000}"));
     }
+    @Test public void preservesItemIdWhitespaceAndDistinctRawIds() throws Exception {
+        final PointsConfig c = parse(valid("UTF-8").replace("[\"a\"]", "[\" a \",\"a\"]"));
+        assertEquals(java.util.Arrays.asList(" a ", "a"), c.getItems());
+        final byte[] encoded = com.opc2ecu.poc.EcuRecordCodec.encode(
+                c.getItems().get(0), c.getMd5Charset(), 1.0, 0L, 192);
+        assertArrayEquals(com.opc2ecu.poc.EcuRecordCodec.md5(" a ".getBytes(StandardCharsets.UTF_8)),
+                java.util.Arrays.copyOf(encoded, 16));
+    }
     private String valid(final String charset){return "{\"periodMillis\":1,\"udp\":{\"host\":\"x\",\"port\":1,\"md5Charset\":\""+charset+"\"},\"items\":[\"a\"]}";}
     private String port(final int port){return "{\"periodMillis\":1,\"udp\":{\"host\":\"x\",\"port\":"+port+"},\"items\":[\"a\"]}";}
     private String v2(final String serverExtra, final String rootExtra) {

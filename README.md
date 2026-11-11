@@ -8,6 +8,8 @@ Linux + Utgard/J-Interop → Windows OPC DA Server → 多 Item 采集 → OPC2E
 
 该程序不依赖 Wine，也不修改任何 Windows/MFC 工程。
 
+当前进展、验证结果及待办见 [当前状态（2026-11-11）](docs/STATUS-2026-11-11.md)。
+
 ## 构建机要求
 
 - JDK 8 或更高版本（代码以 Java 8 字节码为目标）
@@ -25,6 +27,13 @@ mvn clean package
 
 ```text
 target/opcda-probe.jar
+```
+
+ARM 部署包使用项目 `runtime/` 下的固定版本 JRE（该目录已被 Git 忽略）。按
+[打包部署手册](docs/build-package-deploy-manual.md)准备 JRE 后，无需参数执行：
+
+```bash
+scripts/build-imx6ul-bundle.sh
 ```
 
 ## 配置
@@ -47,7 +56,7 @@ ProgID/CLSID（至少一个）、点位、周期、UDP 目标及重连参数。�
 export OPC_PASSWORD='实际密码'
 ```
 
-`md5Charset` 可省略，默认 US-ASCII，现场包含中文路径时可明确配置为 GBK。
+`md5Charset` 可省略，默认 UTF-8；与使用 GBK 的接收端对接时可明确配置为 GBK。
 
 ## 运行
 
@@ -65,10 +74,11 @@ java -Xms16m -Xmx48m -XX:+UseSerialGC -Djava.awt.headless=true \
   --collect config/points.json
 ~~~
 
-每个采集周期在收到全部配置点位后生成一个快照，每个 UDP 包最多 48 条记录；
+每次同步读取结束后，按配置顺序转发本轮可用点位；某点缺失、读取或转换失败不阻断其余点，
+不补发旧轮值。已绑定点恢复正常返回后自动加入后续轮次。每个 UDP 包最多 48 条记录；
 超过 48 条自动拆包，不跨周期混包。业务包发送失败不重传，心跳判定对端离线时
 业务仍照常发送。心跳固定每 1000 ms 发送一次，500 ms 未应答计一次失败，连续
-3 次失败输出 [OFFLINE]，收到匹配会话 ID 的应答后输出 [RECOVERED]。
+3 次失败输出 [OFFLINE]，收到来自配置目标 IP/端口且匹配会话 ID 的应答后输出 [RECOVERED]。
 
 正式启动采集前可预检点位表：
 
@@ -126,9 +136,9 @@ reconnect.maxAttempts=0
 `reconnect.maxAttempts=0` 表示连接建立后的断线恢复可无限重试。关闭进程时会停止
 重连并释放当前客户端。恢复后输出 `[GAP]` 摘要，包含缺口起止时间及估算漏采数。
 
-采集模式另有周期级看门狗：即使仍有部分 Item 回调，超过 3 个采样周期没有发出
-完整快照也会输出 WARN，包含上次完整快照时间和当前已收点位数，并累计
-`snapshotStalls`。该告警不会触发重连；通常应运行点位预检并人工修正坏点或类型。
+采集模式另有点集完整性看门狗：超过 3 个采样周期未收到完整点集时输出 WARN，
+包含最后一轮的缺失点摘要；健康点继续转发，不因部分点缺失重连整条连接。
+完整点集恢复后输出恢复日志。每 60 秒汇总最近业务轮次、发送及跳过/失败计数与心跳状态。
 
 进程退出码：
 

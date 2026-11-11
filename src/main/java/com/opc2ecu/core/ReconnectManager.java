@@ -41,8 +41,12 @@ public final class ReconnectManager implements AutoCloseable {
     private volatile ConnectionState state = ConnectionState.STOPPED;
     private volatile long lastSampleMillis;
     private volatile boolean stopRequested;
+    private final Object stopLock = new Object();
+    private Thread operationThread;
     private OpcDaClient client;
+    private final Object callbackLock = new Object();
     private OpcDataCallback callback;
+    private OpcDataCallback applicationCallback;
     private List<String> items;
     private GapSummary lastGap;
     private long missedSamples;
@@ -107,14 +111,28 @@ public final class ReconnectManager implements AutoCloseable {
         if (state != ConnectionState.STOPPED) {
             throw new IllegalStateException("ReconnectManager is already started");
         }
-        stopRequested = false;
+        synchronized (stopLock) {
+            stopRequested = false;
+            operationThread = Thread.currentThread();
+        }
+        try {
+            startClient(itemIds, applicationCallback);
+        } finally {
+            synchronized (stopLock) { operationThread = null; }
+        }
+    }
+
+    private void startClient(final List<String> itemIds, final OpcDataCallback applicationCallback)
+            throws OpcDaException {
         items = Collections.unmodifiableList(new ArrayList<String>(itemIds));
-        callback = wrap(applicationCallback);
+        this.applicationCallback = applicationCallback;
         state = ConnectionState.CONNECTING;
         final OpcDaClient candidate = factory.create();
         try {
             candidate.connect();
+            if (stopRequested) { closeClient(candidate); return; }
             try {
+                synchronized (callbackLock) { callback = wrap(applicationCallback); }
                 candidate.bindSyncRead(items, callback);
             } catch (final Exception bindFailure) {
                 throw readFailure(
@@ -122,12 +140,12 @@ public final class ReconnectManager implements AutoCloseable {
                                 + "Confirm the item ID exists and is readable.",
                         bindFailure);
             }
-            client = candidate;
-            lastSampleMillis = clock.nowMillis();
-            state = ConnectionState.CONNECTED;
+            if (!publishCandidate(candidate)) { closeClient(candidate); return; }
         } catch (final Exception e) {
+            synchronized (callbackLock) { callback = null; }
             closeClient(candidate);
             state = ConnectionState.STOPPED;
+            if (stopRequested) { return; }
             if (e instanceof OpcDaException
                     && ((OpcDaException) e).getKind() == OpcDaException.Kind.READ) {
                 throw (OpcDaException) e;
@@ -159,6 +177,7 @@ public final class ReconnectManager implements AutoCloseable {
             return client.readItem(itemId);
         } catch (final Exception firstFailure) {
             handleFailure(firstFailure);
+            if (stopRequested) { throw readFailure("OPC read cancelled by stop request", firstFailure); }
             try {
                 return client.readItem(itemId);
             } catch (final Exception retryFailure) {
@@ -182,10 +201,20 @@ public final class ReconnectManager implements AutoCloseable {
         if (stopRequested || state == ConnectionState.STOPPED) {
             return;
         }
+        synchronized (stopLock) { operationThread = Thread.currentThread(); }
+        try {
+            recover(failure);
+        } finally {
+            synchronized (stopLock) { operationThread = null; }
+        }
+    }
+
+    private void recover(final Throwable failure) throws OpcDaException {
         final long failureDetectedAt = clock.nowMillis();
         final long gapStart = Math.min(lastSampleMillis, failureDetectedAt);
         LOGGER.warn("OPC connection lost; starting recovery: {}", safeMessage(failure));
         state = ConnectionState.RECONNECTING;
+        synchronized (callbackLock) { callback = null; } // Invalidate before unbinding.
         closeClient(client);
         client = null;
 
@@ -204,6 +233,7 @@ public final class ReconnectManager implements AutoCloseable {
             } catch (final InterruptedException e) {
                 Thread.currentThread().interrupt();
                 state = ConnectionState.STOPPED;
+                if (stopRequested) { return; }
                 throw new OpcDaException(
                         OpcDaException.Kind.TIMEOUT,
                         "Reconnect wait was interrupted; stop the service cleanly and restart it.", e);
@@ -215,16 +245,18 @@ public final class ReconnectManager implements AutoCloseable {
             final OpcDaClient candidate = factory.create();
             try {
                 candidate.connect();
+                if (stopRequested) { closeClient(candidate); return; }
+                synchronized (callbackLock) { callback = wrap(applicationCallback); }
                 candidate.bindSyncRead(items, callback);
-                client = candidate;
-                lastSampleMillis = clock.nowMillis();
-                state = ConnectionState.CONNECTED;
+                if (!publishCandidate(candidate)) { closeClient(candidate); return; }
                 recordGap(gapStart, lastSampleMillis);
                 LOGGER.info("OPC connection recovered on attempt {}", attempt);
                 return;
             } catch (final Exception e) {
                 lastFailure = e;
+                synchronized (callbackLock) { callback = null; }
                 closeClient(candidate);
+                if (stopRequested) { return; }
                 LOGGER.warn("Reconnect attempt {} failed: {}", attempt, safeMessage(e));
                 attempt++;
             }
@@ -240,12 +272,36 @@ public final class ReconnectManager implements AutoCloseable {
                 lastFailure);
     }
 
+    private boolean publishCandidate(final OpcDaClient candidate) {
+        synchronized (stopLock) {
+            if (stopRequested) { return false; }
+            client = candidate;
+            lastSampleMillis = clock.nowMillis();
+            state = ConnectionState.CONNECTED;
+            return true;
+        }
+    }
+
     private OpcDataCallback wrap(final OpcDataCallback applicationCallback) {
         return new OpcDataCallback() {
+            @Override public void onCycleStarted() {
+                synchronized (callbackLock) {
+                    if (!stopRequested && this == callback) { applicationCallback.onCycleStarted(); }
+                }
+            }
+            @Override public void onCycleComplete() {
+                synchronized (callbackLock) {
+                    if (!stopRequested && this == callback) { applicationCallback.onCycleComplete(); }
+                }
+            }
             @Override
             public void onData(final OpcReadValue value) {
-                lastSampleMillis = clock.nowMillis();
-                applicationCallback.onData(value);
+                synchronized (callbackLock) {
+                    if (!stopRequested && this == callback) {
+                        lastSampleMillis = clock.nowMillis();
+                        applicationCallback.onData(value);
+                    }
+                }
             }
         };
     }
@@ -296,10 +352,19 @@ public final class ReconnectManager implements AutoCloseable {
     public long getLastSampleMillis() { return lastSampleMillis; }
 
     @Override
-    public synchronized void close() {
-        stopRequested = true;
-        closeClient(client);
-        client = null;
-        state = ConnectionState.STOPPED;
+    public void close() {
+        // Publish cancellation before waiting for the lifecycle operation lock.
+        synchronized (stopLock) {
+            stopRequested = true;
+            if (operationThread != null && operationThread != Thread.currentThread()) {
+                operationThread.interrupt();
+            }
+        }
+        synchronized (callbackLock) { callback = null; }
+        synchronized (this) {
+            closeClient(client);
+            client = null;
+            state = ConnectionState.STOPPED;
+        }
     }
 }

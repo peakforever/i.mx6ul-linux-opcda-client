@@ -40,8 +40,11 @@ public final class UdpRecordSender {
                         value.getItemId(), charset, numericValue(value.getValue()), unixSeconds(value),
                         value.getQuality() & 0xffff));
             } catch (final IllegalArgumentException e) {
-                recordsSkipped.incrementAndGet();
-                LOGGER.warn("OPC record skipped; item={} reason={}", value.getItemId(), e.getMessage());
+                final long skipped = recordsSkipped.incrementAndGet();
+                if (skipped == 1L || skipped % 100L == 0L) {
+                    LOGGER.warn("OPC records skipped; total={} latestItem={} reason={} (sampled every 100 skips)",
+                            skipped, value.getItemId(), e.getMessage());
+                }
             }
         }
         for (int offset = 0; offset < records.size(); offset += EcuRecordCodec.MAX_RECORDS_PER_DATAGRAM) {

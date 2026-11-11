@@ -149,7 +149,7 @@ public final class PointsConfig {
             if (!item.isTextual() || item.asText().trim().isEmpty()) {
                 throw new IllegalArgumentException("items must contain non-empty strings");
             }
-            final String value = item.asText().trim();
+            final String value = item.asText();
             if (!unique.add(value)) {
                 throw new IllegalArgumentException("items contains duplicate entry: " + value);
             }

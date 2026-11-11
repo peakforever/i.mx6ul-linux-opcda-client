@@ -167,6 +167,142 @@ public class ReconnectManagerTest {
         assertEquals(1, fixture.factory.createCount);
     }
 
+    @Test(timeout = 5000L)
+    public void closeCancelsInfiniteRecoveryDuringBackoff() throws Exception {
+        final java.util.concurrent.CountDownLatch sleeping = new java.util.concurrent.CountDownLatch(1);
+        final FakeClient initial = new FakeClient(false, false);
+        final QueueFactory factory = new QueueFactory(initial);
+        final ReconnectManager manager = new ReconnectManager(factory,
+                new ReconnectPolicy(30000L, 30000L, 0), 1000L, true,
+                new MutableTime(), new ReconnectManager.Sleeper() {
+                    @Override public void sleep(long millis) throws InterruptedException {
+                        sleeping.countDown();
+                        Thread.sleep(millis);
+                    }
+                }, fixedJitter(), null);
+        manager.start(noopCallback());
+        final java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+                new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        final Thread recovery = recoverOnThread(manager, failure);
+        try {
+            assertTrue(sleeping.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            manager.close();
+            recovery.join(2000L);
+            assertFalse(recovery.isAlive());
+            assertEquals(null, failure.get());
+            assertEquals(ConnectionState.STOPPED, manager.getState());
+            assertEquals(1, factory.createCount);
+            assertEquals(1, initial.disconnectCount);
+        } finally { recovery.interrupt(); }
+    }
+
+    @Test(timeout = 5000L)
+    public void stopDuringConnectDiscardsCandidateWithoutBinding() throws Exception {
+        stopDuringCandidate(false, false);
+    }
+
+    @Test(timeout = 5000L)
+    public void stopDuringBindNeverPublishesCandidate() throws Exception {
+        stopDuringCandidate(true, false);
+    }
+
+    @Test(timeout = 5000L)
+    public void stopDuringInitialConnectDiscardsCandidateWithoutBinding() throws Exception {
+        stopDuringCandidate(false, true);
+    }
+
+    @Test(timeout = 5000L)
+    public void stopDuringInitialBindNeverPublishesCandidate() throws Exception {
+        stopDuringCandidate(true, true);
+    }
+
+    private void stopDuringCandidate(final boolean blockBind, final boolean initialStart) throws Exception {
+        final FakeClient initial = new FakeClient(false, false);
+        final FakeClient candidate = new FakeClient(false, false);
+        final java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch cancelled = new java.util.concurrent.CountDownLatch(1);
+        candidate.blockBind = blockBind;
+        candidate.entered = entered;
+        candidate.release = release;
+        candidate.cancelled = cancelled;
+        final Fixture fixture = initialStart ? fixture(0, candidate) : fixture(0, initial, candidate);
+        if (!initialStart) { fixture.manager.start(noopCallback()); }
+        final java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+                new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        final Thread recovery;
+        if (initialStart) {
+            recovery = new Thread(new Runnable() {
+                @Override public void run() {
+                    try { fixture.manager.start(noopCallback()); }
+                    catch (Throwable e) { failure.set(e); }
+                }
+            }, "test-initial-connect");
+            recovery.setDaemon(true);
+            recovery.start();
+        } else {
+            recovery = recoverOnThread(fixture.manager, failure);
+        }
+        final Thread closing = new Thread(new Runnable() {
+            @Override public void run() { fixture.manager.close(); }
+        });
+        try {
+            assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            closing.start();
+            assertTrue(cancelled.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(closing.isAlive());
+            release.countDown();
+            recovery.join(2000L);
+            closing.join(2000L);
+            assertFalse(recovery.isAlive());
+            assertFalse(closing.isAlive());
+            assertEquals(null, failure.get());
+            assertEquals(ConnectionState.STOPPED, fixture.manager.getState());
+            assertEquals(blockBind ? 1 : 0, candidate.bindCount);
+            assertEquals(1, candidate.disconnectCount);
+            assertEquals(initialStart ? 0 : 1, initial.disconnectCount);
+            assertEquals(null, fixture.manager.getLastGap());
+        } finally {
+            release.countDown();
+            recovery.interrupt();
+            closing.join(2000L);
+            recovery.join(2000L);
+        }
+    }
+
+    private static Thread recoverOnThread(final ReconnectManager manager,
+            final java.util.concurrent.atomic.AtomicReference<Throwable> failure) {
+        final Thread thread = new Thread(new Runnable() {
+            @Override public void run() {
+                try { manager.handleFailure(new Exception("test link failure")); }
+                catch (Throwable e) { failure.set(e); }
+            }
+        }, "test-recovery");
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
+    }
+
+    @Test public void failedBindInvalidatesAllCandidateCallbacks() throws Exception {
+        final FakeClient failed = new FakeClient(false, true);
+        final Fixture fixture = fixture(1, failed);
+        final List<String> events = new ArrayList<String>();
+        try {
+            fixture.manager.start(new OpcDataCallback() {
+                public void onCycleStarted() { events.add("start"); }
+                public void onData(OpcReadValue value) { events.add(value.getItemId()); }
+                public void onCycleComplete() { events.add("end"); }
+            });
+            fail("Expected bind failure");
+        } catch (OpcDaException expected) {
+            assertEquals(ConnectionState.STOPPED, fixture.manager.getState());
+        }
+        failed.boundCallback.onCycleStarted();
+        failed.boundCallback.onData(new OpcReadValue("late", 99, 192, null));
+        failed.boundCallback.onCycleComplete();
+        assertTrue(events.isEmpty());
+    }
+
     private static Fixture fixture(final int attempts, final FakeClient... clients) {
         final MutableTime time = new MutableTime();
         final QueueFactory factory = new QueueFactory(clients);
@@ -241,6 +377,22 @@ public class ReconnectManagerTest {
         private final boolean failBind;
         private Exception connectException;
         private boolean connected;
+        private boolean blockBind;
+        private OpcDataCallback boundCallback;
+        private java.util.concurrent.CountDownLatch entered;
+        private java.util.concurrent.CountDownLatch release;
+        private java.util.concurrent.CountDownLatch cancelled;
+
+        private void blockIfRequested(final boolean binding) {
+            if (entered == null || blockBind != binding) { return; }
+            entered.countDown();
+            boolean interrupted = false;
+            for (;;) {
+                try { release.await(); break; }
+                catch (InterruptedException e) { interrupted = true; cancelled.countDown(); }
+            }
+            if (interrupted) { Thread.currentThread().interrupt(); }
+        }
         private int connectCount;
         private int disconnectCount;
         private int bindCount;
@@ -261,6 +413,7 @@ public class ReconnectManagerTest {
 
         @Override public void connect() throws Exception {
             connectCount++;
+            blockIfRequested(false);
             if (connectException != null) { throw connectException; }
             if (failConnect) { throw new Exception("connect failed"); }
             connected = true;
@@ -275,7 +428,9 @@ public class ReconnectManagerTest {
             return new OpcReadValue(itemId, "value", 192, null);
         }
         @Override public void bindSyncRead(final OpcDataCallback callback) throws Exception {
+            boundCallback = callback;
             bindCount++;
+            blockIfRequested(true);
             if (failBind) { throw new Exception("bind failed"); }
         }
         @Override public void unbind() { unbindCount++; }

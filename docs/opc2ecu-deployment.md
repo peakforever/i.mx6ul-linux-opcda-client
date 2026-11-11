@@ -1,7 +1,7 @@
 # OPC DA 客户端(opc2ecu)部署文档
 
 - 版本:v1(2026-08-21)
-- 适用程序:opcda-probe.jar(迭代 1+2+预检+配置 v2.1,111 测试)
+- 适用程序:opcda-probe.jar(迭代 1+2+预检+配置 v2.1,175 测试)
 - 目标设备:ECU 系列物联网关(i.MX6UL/ULL)
 - 关联文档:
   - 配置契约:docs/points-config-format.md(v2.1)
@@ -374,10 +374,10 @@ SYSTEMD_SERVICE:${PN} = "opc2ecu.service"
 
 ```bash
 cd ~/i.mx6ul-linux-opcda-client
-mvn clean package                      # 产出 target/opcda-probe.jar(111 测试)
+mvn clean package                      # 产出 target/opcda-probe.jar(175 测试)
 cp config/points.json.example config/points.json   # 填真实环境
 cp config/opc.properties.example config/opc.properties
-scripts/build-imx6ul-bundle.sh /path/to/zulu8.76.0.17-ca-cp1-jre8.0.402-linux_aarch32hf.tar.gz
+scripts/build-imx6ul-bundle.sh
 # 产出 target/opc2ecu-imx6ul-armhf.tar.gz,脚本内置 JRE SHA-256 校验
 ```
 

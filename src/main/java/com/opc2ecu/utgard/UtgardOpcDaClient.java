@@ -40,12 +40,10 @@ import org.openscada.opc.dcom.da.OPCSERVERSTATUS;
 import org.openscada.opc.dcom.list.ClassDetails;
 import org.openscada.opc.lib.common.ConnectionInformation;
 import org.openscada.opc.lib.da.AccessBase;
-import org.openscada.opc.lib.da.DataCallback;
 import org.openscada.opc.lib.da.Group;
 import org.openscada.opc.lib.da.Item;
 import org.openscada.opc.lib.da.ItemState;
 import org.openscada.opc.lib.da.Server;
-import org.openscada.opc.lib.da.SyncAccess;
 import org.openscada.opc.lib.list.Categories;
 import org.openscada.opc.lib.list.Category;
 import org.openscada.opc.lib.list.ServerList;
@@ -239,16 +237,10 @@ public final class UtgardOpcDaClient implements OpcDaClient {
             throw new IllegalArgumentException("callback must not be null");
         }
         try {
-            access = new SyncAccess(server, samplingPeriodMillis);
-            for (final String itemId : items) {
-                access.addItem(itemId, new DataCallback() {
-                    @Override
-                    public void changed(final Item item, final ItemState state) {
-                        callback.onData(convert(item, state));
-                    }
-                });
-            }
-            access.bind();
+            final IsolatedSyncAccess polling = new IsolatedSyncAccess(server, samplingPeriodMillis, callback);
+            access = polling;
+            for (final String itemId : items) { polling.registerItem(itemId); }
+            polling.bind();
         } catch (final Exception e) {
             throw readException("Unable to bind synchronous read for configured items", e);
         }
@@ -274,8 +266,12 @@ public final class UtgardOpcDaClient implements OpcDaClient {
     }
 
     private static OpcReadValue convert(final Item item, final ItemState state) {
+        return convert(item.getId(), state);
+    }
+
+    static OpcReadValue convert(final String itemId, final ItemState state) {
         return new OpcReadValue(
-                item.getId(),
+                itemId,
                 unwrapScalar(state.getValue()),
                 state.getQuality() == null ? 0 : state.getQuality().intValue() & 0xffff,
                 state.getTimestamp());
