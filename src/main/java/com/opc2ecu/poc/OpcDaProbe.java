@@ -3,6 +3,7 @@ package com.opc2ecu.poc;
 import com.opc2ecu.core.DiagCode;
 import com.opc2ecu.core.ExitCodes;
 import com.opc2ecu.core.CollectionCycle;
+import com.opc2ecu.core.PeriodicCollectionPublisher;
 import com.opc2ecu.core.DatagramChannel;
 import com.opc2ecu.core.GapSummary;
 import com.opc2ecu.core.HeartbeatSession;
@@ -259,8 +260,12 @@ public final class OpcDaProbe {
                 new AtomicReference<ReconnectManager>(manager);
         final AtomicReference<HeartbeatSession> heartbeatTarget =
                 new AtomicReference<HeartbeatSession>(heartbeat);
+        final AtomicReference<PeriodicCollectionPublisher> publisherTarget =
+                new AtomicReference<PeriodicCollectionPublisher>();
         final Thread hook = new Thread(new Runnable() {
             @Override public void run() {
+                final PeriodicCollectionPublisher publisher = publisherTarget.getAndSet(null);
+                if (publisher != null) { publisher.close(); }
                 final ReconnectManager currentManager = managerTarget.getAndSet(null);
                 if (currentManager != null) { currentManager.close(); }
                 final HeartbeatSession currentHeartbeat = heartbeatTarget.getAndSet(null);
@@ -275,11 +280,18 @@ public final class OpcDaProbe {
                     points.getItems(), sender, points.getPeriodMillis(),
                     new CollectionCycle.TimeSource() {
                         @Override public long nowMillis() { return System.currentTimeMillis(); }
+                        @Override public long monotonicMillis() {
+                            return TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
+                        }
                     }, new CollectionCycle.SnapshotListener() {
                         @Override public void onSnapshot(final long snapshotAtMillis) { }
                     });
-            manager.start(points.getItems(), cycle);
+            final PeriodicCollectionPublisher publisher =
+                    new PeriodicCollectionPublisher(cycle, points.getPeriodMillis());
+            publisherTarget.set(publisher);
             heartbeat.start();
+            publisher.start();
+            manager.startWithRecovery(points.getItems(), cycle);
             System.out.printf("[START] Collecting %d item(s) every %d ms to %s:%d.%n",
                     points.getItems().size(), points.getPeriodMillis(),
                     points.getUdpHost(), points.getUdpPort());
@@ -293,14 +305,18 @@ public final class OpcDaProbe {
                 if (nowNanos - lastSummaryNanos >= TimeUnit.SECONDS.toNanos(60L)) {
                     final long packets = sender.getPacketsSent();
                     final long records = sender.getRecordsSent();
-                    LOGGER.info("Collection status; connection={} lastSnapshotAt={} snapshotAgeMillis={} "
+                    LOGGER.info("Collection status; connection={} lastPublicationAt={} publicationAgeMillis={} "
+                                    + "lastReadAt={} "
                                     + "incompleteEpisodes={} lastReadItems={}/{} packetsSentDelta={} "
-                                    + "recordsSentDelta={} recordsSkipped={} sendFailures={} heartbeatOnline={} "
+                                    + "recordsSentDelta={} heldBadItems={} invalidSamples={} "
+                                    + "recordsSkipped={} sendFailures={} heartbeatOnline={} "
                                     + "(sent means local send success, not delivery)",
                             manager.getState(), cycle.getLastSnapshotAt(),
                             Math.max(0L, System.currentTimeMillis() - cycle.getLastSnapshotAt()),
+                            cycle.getLastReadAt(),
                             cycle.getSnapshotStalls(), cycle.getLastCycleItemCount(), points.getItems().size(),
-                            packets - previousPackets, records - previousRecords, sender.getRecordsSkipped(),
+                            packets - previousPackets, records - previousRecords,
+                            cycle.getHeldItemCount(), cycle.getInvalidSamples(), sender.getRecordsSkipped(),
                             sender.getSendFailures(), heartbeat.isOnline());
                     previousPackets = packets;
                     previousRecords = records;
@@ -308,6 +324,8 @@ public final class OpcDaProbe {
                 }
             }
         } finally {
+            final PeriodicCollectionPublisher publisher = publisherTarget.getAndSet(null);
+            if (publisher != null) { publisher.close(); }
             managerTarget.set(null);
             heartbeatTarget.set(null);
             try { Runtime.getRuntime().removeShutdownHook(hook); }

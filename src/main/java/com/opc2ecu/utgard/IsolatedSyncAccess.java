@@ -2,6 +2,7 @@ package com.opc2ecu.utgard;
 
 import com.opc2ecu.core.DiagCode;
 import com.opc2ecu.core.OpcDataCallback;
+import com.opc2ecu.core.QualityReason;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -38,15 +39,22 @@ class IsolatedSyncAccess extends SyncAccess {
     @Override protected void runOnce() throws JIException {
         if (!active) { return; }
         callback.onCycleStarted();
+        JIException connectionFailure = null;
         try {
-            readBatch();
-        } catch (final RuntimeException malformedBatch) {
-            // Group.read dereferences each OPCITEMSTATE before returning the map.
-            // A null result for one failed item must not discard all other results.
-            reportFailure("<batch>", malformedBatch);
-            readIndividually();
+            try {
+                readBatch();
+            } catch (final RuntimeException malformedBatch) {
+                // Group.read may dereference a failed point before returning the map.
+                reportFailure("<batch>", malformedBatch);
+                readIndividually();
+            }
+        } catch (final JIException failure) {
+            connectionFailure = failure;
+            throw failure;
         } finally {
             callback.onCycleComplete();
+            // Publish after completing the read so its finally cannot erase this cause.
+            if (connectionFailure != null) { callback.onConnectionLost(connectionFailure); }
         }
     }
 
@@ -79,8 +87,12 @@ class IsolatedSyncAccess extends SyncAccess {
             } catch (final JIException e) {
                 final DiagCode code = UtgardOpcDaClient.classify(e);
                 if (code != DiagCode.UNKNOWN && code != DiagCode.GENERIC_CONNECTION) { throw e; }
+                final QualityReason reason = QualityReason.fromFailure(e);
+                callback.onPointFailure(itemId, reason == QualityReason.OTHER_FAILURE
+                        ? QualityReason.POINT_READ_FAILED : reason);
                 reportFailure(itemId, e);
             } catch (final RuntimeException e) {
+                callback.onPointFailure(itemId, QualityReason.SAMPLE_NOT_ENCODABLE);
                 reportFailure(itemId, e);
             }
         }
@@ -88,6 +100,12 @@ class IsolatedSyncAccess extends SyncAccess {
 
     protected final void deliver(final String itemId, final ItemState state) {
         if (itemId == null || state == null || state.getErrorCode() < 0) {
+            if (itemId != null) {
+                final QualityReason reason = state == null ? QualityReason.POINT_MISSING
+                        : QualityReason.fromHresult(state.getErrorCode());
+                callback.onPointFailure(itemId, reason == QualityReason.OTHER_FAILURE
+                        ? QualityReason.POINT_READ_FAILED : reason);
+            }
             reportFailure(itemId, null);
             return;
         }
@@ -95,6 +113,7 @@ class IsolatedSyncAccess extends SyncAccess {
             // Deliberately bypass AccessBase's change-only itemCache: this is periodic sampling.
             callback.onData(UtgardOpcDaClient.convert(itemId, state));
         } catch (final RuntimeException e) {
+            callback.onPointFailure(itemId, QualityReason.SAMPLE_NOT_ENCODABLE);
             reportFailure(itemId, e);
         }
     }

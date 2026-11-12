@@ -3,7 +3,7 @@
 - 版本:v2.1(2026-08-20,去除 group 歧义,统一 UTF-8)
 - 用途:ECU 网关 OPC DA 驱动(Java,opcda-client)的完整运行配置;本文件为
   C++ 应用侧(配置文件生成方)与 Java 驱动侧(消费方)的对接契约
-- 关联:docs/OPC-DA驱动自定义UDP通讯协议v1.2.docx(数据面协议)
+- 关联:[OPC‑DA驱动自定义UDP通讯协议v1.3.docx](OPC‑DA驱动自定义UDP通讯协议v1.3.docx)(数据面协议)
 
 ## 一、文件与位置
 

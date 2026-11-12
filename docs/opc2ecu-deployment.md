@@ -6,7 +6,7 @@
 - 关联文档:
   - 配置契约:docs/points-config-format.md(v2.1)
   - 移植记录:docs/imx6ul-porting.md(ABI 实测、Runtime 方案)
-  - 数据面协议:docs/OPC-DA驱动自定义UDP通讯协议v1.2.docx
+  - 数据面协议:[OPC‑DA驱动自定义UDP通讯协议v1.3.docx](OPC‑DA驱动自定义UDP通讯协议v1.3.docx)
 
 ---
 
@@ -194,6 +194,8 @@ exec "$APP_HOME/runtime/bin/java" \
 - 校验失败:启动场景报错退出(退出码 2);热重载场景保留旧配置继续运行。
 
 ### 3.6 进程管理(systemd)
+
+采集运行语义见 [保持值与品质发送规格](dev-spec-held-values.md)：启动全点 `0＋Bad`，失败保持最后可编码值及原采样时间、降为 Bad；独立周期发送在首次连接和重连期间继续。[品质约定](application-quality-format.md) 保留 OPC 低字节、高字节为应用原因，替代服务器厂商扩展。接收端必须同时检查品质和收包超时，不能把保持值当作新采样。
 
 ```ini
 # /etc/systemd/system/opc2ecu.service
@@ -465,6 +467,6 @@ df -h                                      # rootfs 余量
 
 - 配置契约 v2.1:`docs/points-config-format.md`(C++ 侧对接模板)
 - 移植记录与 ABI 实测:`docs/imx6ul-porting.md`
-- 数据面协议:`docs/OPC-DA驱动自定义UDP通讯协议v1.2.docx`
+- 数据面协议:[OPC‑DA驱动自定义UDP通讯协议v1.3.docx](OPC‑DA驱动自定义UDP通讯协议v1.3.docx)
 - 程序用法/构建:`README.md`
 - 状态与联调前置:`docs/STATUS-2026-08-20.md`

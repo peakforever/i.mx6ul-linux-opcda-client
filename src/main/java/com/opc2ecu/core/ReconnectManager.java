@@ -142,7 +142,10 @@ public final class ReconnectManager implements AutoCloseable {
             }
             if (!publishCandidate(candidate)) { closeClient(candidate); return; }
         } catch (final Exception e) {
-            synchronized (callbackLock) { callback = null; }
+            synchronized (callbackLock) {
+                callback = null;
+                applicationCallback.onConnectionLost(e);
+            }
             closeClient(candidate);
             state = ConnectionState.STOPPED;
             if (stopRequested) { return; }
@@ -159,6 +162,22 @@ public final class ReconnectManager implements AutoCloseable {
                     "Unable to connect to the OPC DA server. Check OPC_PASSWORD, ProgID/CLSID, "
                             + "DCOM permissions, and Windows firewall TCP 135/RPC dynamic ports.",
                     e);
+        }
+    }
+
+    /** Collection mode may publish initialized values while its first connection is retried. */
+    public synchronized void startWithRecovery(
+            final List<String> itemIds, final OpcDataCallback applicationCallback) throws OpcDaException {
+        lastSampleMillis = clock.nowMillis(); // Initial recovery gap starts now, not at the epoch.
+        try {
+            start(itemIds, applicationCallback);
+        } catch (final OpcDaException failure) {
+            if (!reconnectEnabled) { throw failure; }
+            synchronized (stopLock) {
+                if (stopRequested) { return; }
+                state = ConnectionState.CONNECTING;
+            }
+            handleFailure(failure);
         }
     }
 
@@ -192,8 +211,7 @@ public final class ReconnectManager implements AutoCloseable {
         if (state == ConnectionState.CONNECTED
                 && clock.nowMillis() - lastSampleMillis > watchdogMillis) {
             handleFailure(new OpcDaException(
-                    OpcDaException.Kind.TIMEOUT,
-                    "No OPC callback was received within " + watchdogMillis + " ms"));
+                    OpcDaException.Kind.TIMEOUT, DiagCode.READ_STALE, null, "callback-watchdog"));
         }
     }
 
@@ -214,7 +232,10 @@ public final class ReconnectManager implements AutoCloseable {
         final long gapStart = Math.min(lastSampleMillis, failureDetectedAt);
         LOGGER.warn("OPC connection lost; starting recovery: {}", safeMessage(failure));
         state = ConnectionState.RECONNECTING;
-        synchronized (callbackLock) { callback = null; } // Invalidate before unbinding.
+        synchronized (callbackLock) {
+            callback = null; // Invalidate before unbinding.
+            applicationCallback.onConnectionLost(failure);
+        }
         closeClient(client);
         client = null;
 
@@ -254,7 +275,10 @@ public final class ReconnectManager implements AutoCloseable {
                 return;
             } catch (final Exception e) {
                 lastFailure = e;
-                synchronized (callbackLock) { callback = null; }
+                synchronized (callbackLock) {
+                    callback = null;
+                    applicationCallback.onConnectionLost(e);
+                }
                 closeClient(candidate);
                 if (stopRequested) { return; }
                 LOGGER.warn("Reconnect attempt {} failed: {}", attempt, safeMessage(e));
@@ -292,6 +316,16 @@ public final class ReconnectManager implements AutoCloseable {
             @Override public void onCycleComplete() {
                 synchronized (callbackLock) {
                     if (!stopRequested && this == callback) { applicationCallback.onCycleComplete(); }
+                }
+            }
+            @Override public void onConnectionLost(final Throwable failure) {
+                synchronized (callbackLock) {
+                    if (!stopRequested && this == callback) { applicationCallback.onConnectionLost(failure); }
+                }
+            }
+            @Override public void onPointFailure(final String itemId, final QualityReason reason) {
+                synchronized (callbackLock) {
+                    if (!stopRequested && this == callback) { applicationCallback.onPointFailure(itemId, reason); }
                 }
             }
             @Override

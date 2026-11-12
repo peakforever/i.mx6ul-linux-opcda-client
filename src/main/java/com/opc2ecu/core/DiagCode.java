@@ -25,6 +25,9 @@ public enum DiagCode {
     SOCKET_CONNECT_FAILED(null, "network", "TCP connection could not be established",
             "Check target listener, address, routing and firewall; this alone does not prove authentication failure."),
 
+    READ_STALE(null, "read", "No OPC callback was received before the freshness deadline",
+            "Inspect the OPC read path and connection; periodic UDP publication does not prove a successful read."),
+
     /** Remote activation can return this HRESULT before any OPC item read. */
     RPC_INVALID_HEADER(
             0x80010111, "dcom",
@@ -47,16 +50,15 @@ public enum DiagCode {
             "RPC server unavailable: OPCEnum/OPC server service not running, or TCP 135 blocked",
             "Start the OPC server application (and OPCEnum service); allow inbound TCP 135 from the ECU IP."),
 
-    /** 0x800706BF RPC_S_ENDPOINT_NOT_FOUND: dynamic RPC endpoint refused. */
+    /** 0x800706D9 EPT_S_NOT_REGISTERED: endpoint mapper has no registered endpoint. */
     RPC_ENDPOINT_NOT_FOUND(
-            0x800706BF, "rpc",
-            "RPC dynamic endpoint not reachable: the DCOM business-channel port range is blocked",
-            "Allow inbound TCP 49152-65535 from the ECU IP, or fix the RPC port range in the registry "
-                    + "(see docs/opc-server-windows-deploy.md section 2, option B)."),
+            0x800706D9, "rpc",
+            "RPC endpoint mapper has no registered endpoint for the requested interface",
+            "Verify the OPC service is running and its RPC interfaces are registered; inspect server logs."),
 
-    /** 0x800706D3 RPC_S_SERVER_TOO_BUSY. */
+    /** 0x800706BB RPC_S_SERVER_TOO_BUSY. */
     RPC_SERVER_TOO_BUSY(
-            0x800706D3, "rpc",
+            0x800706BB, "rpc",
             "RPC server too busy: the OPC host is overloaded or transiently saturated",
             "Retry later; check load on the Windows host if it persists."),
 
@@ -65,6 +67,14 @@ public enum DiagCode {
             0x800706BE, "rpc",
             "RPC call failed: connection was cut mid-call (network drop or firewall interference)",
             "Check stability of the link between ECU and the Windows host; verify RPC dynamic ports are allowed."),
+
+    RPC_CALL_NOT_EXECUTED(
+            0x800706BF, "rpc", "RPC call failed and did not execute",
+            "Inspect the RPC connection and target service; this alone does not prove a blocked port."),
+
+    RPC_AUTHENTICATION_UNSUPPORTED(
+            0x800706D3, "rpc", "RPC authentication service is unknown",
+            "Check client/server authentication mechanism compatibility; this is not proof of a wrong password."),
 
     /** 0x80040154 REGDB_E_CLASSNOTREG: ProgID/CLSID not registered. */
     CLASS_NOT_REGISTERED(

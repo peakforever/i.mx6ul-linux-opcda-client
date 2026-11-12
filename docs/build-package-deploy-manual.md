@@ -7,7 +7,7 @@
   - 部署原理/运行需求:docs/opc2ecu-deployment.md
   - 配置契约 v2.1:docs/points-config-format.md
   - Windows OPC Server 侧配置:docs/opc-server-windows-deploy.md
-  - 数据面协议:docs/OPC-DA驱动自定义UDP通讯协议v1.2.docx
+  - 数据面协议:[OPC‑DA驱动自定义UDP通讯协议v1.3.docx](OPC‑DA驱动自定义UDP通讯协议v1.3.docx)
 
 ---
 
@@ -216,7 +216,7 @@ sh /home/ecu/opc2ecu/verify-opcda.sh --collect
 |---|---|---|---|
 | OPC_E_DCOM_ACCESS_DENIED | dcom | DCOM 权限或账号密码错 | mmc comexp.msc /32 两个组件加账号;核对 domain/user/password |
 | OPC_E_RPC_SERVER_UNAVAILABLE | rpc | RPC 服务不可用 | Matrikon/OPCEnum 服务没起;TCP 135 被拦 |
-| OPC_E_RPC_ENDPOINT_NOT_FOUND | rpc | RPC 动态端口被拦 | 放行 49152-65535 或固定 RPC 端口 |
+| OPC_E_RPC_ENDPOINT_NOT_FOUND | rpc | 端点映射器没有注册接口端点（1753/0x800706D9） | 检查目标服务运行、RPC 接口注册和服务日志，不能直接认定端口被拦 |
 | OPC_E_CLASS_NOT_REGISTERED | registry | ProgID/CLSID 未注册 | 核对配置;确认 32 位组件视图可见 |
 | OPC_E_AUTH_OR_NETWORK_TIMEOUT | auth | 挂起超时:鉴权失败或网络黑洞 | 先核对密码/域;再看防火墙是否丢包 |
 | OPC_E_UNKNOWN | generic | 无法归因 | 开 debug 日志看完整栈:java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug -jar ... |

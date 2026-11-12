@@ -10,8 +10,10 @@ public class DiagCodeTest {
     @Test public void knownHresultsMapToSpecificCodes() {
         assertEquals(DiagCode.DCOM_ACCESS_DENIED, DiagCode.fromHresult(0x80070005));
         assertEquals(DiagCode.RPC_SERVER_UNAVAILABLE, DiagCode.fromHresult(0x800706BA));
-        assertEquals(DiagCode.RPC_ENDPOINT_NOT_FOUND, DiagCode.fromHresult(0x800706BF));
-        assertEquals(DiagCode.RPC_SERVER_TOO_BUSY, DiagCode.fromHresult(0x800706D3));
+        assertEquals(DiagCode.RPC_ENDPOINT_NOT_FOUND, DiagCode.fromHresult(0x800706D9));
+        assertEquals(DiagCode.RPC_SERVER_TOO_BUSY, DiagCode.fromHresult(0x800706BB));
+        assertEquals(DiagCode.RPC_CALL_NOT_EXECUTED, DiagCode.fromHresult(0x800706BF));
+        assertEquals(DiagCode.RPC_AUTHENTICATION_UNSUPPORTED, DiagCode.fromHresult(0x800706D3));
         assertEquals(DiagCode.RPC_CALL_FAILED, DiagCode.fromHresult(0x800706BE));
         assertEquals(DiagCode.CLASS_NOT_REGISTERED, DiagCode.fromHresult(0x80040154));
     }
@@ -24,7 +26,10 @@ public class DiagCodeTest {
         // J-Interop sometimes reports 0x00000005 instead of 0x80070005
         assertEquals(DiagCode.DCOM_ACCESS_DENIED, DiagCode.fromHresult(0x00000005));
         assertEquals(DiagCode.RPC_SERVER_UNAVAILABLE, DiagCode.fromHresult(1722)); // 0x6BA
-        assertEquals(DiagCode.RPC_ENDPOINT_NOT_FOUND, DiagCode.fromHresult(1727)); // 0x6BF
+        assertEquals(DiagCode.RPC_ENDPOINT_NOT_FOUND, DiagCode.fromHresult(1753)); // 0x6D9
+        assertEquals(DiagCode.RPC_CALL_NOT_EXECUTED, DiagCode.fromHresult(1727));
+        assertEquals(DiagCode.RPC_SERVER_TOO_BUSY, DiagCode.fromHresult(1723));
+        assertEquals(DiagCode.RPC_AUTHENTICATION_UNSUPPORTED, DiagCode.fromHresult(1747));
     }
 
     @Test public void timeoutAttributionIsAuthOrNetwork() {

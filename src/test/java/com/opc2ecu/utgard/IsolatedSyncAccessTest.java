@@ -2,6 +2,7 @@ package com.opc2ecu.utgard;
 
 import com.opc2ecu.core.OpcDataCallback;
 import com.opc2ecu.core.OpcReadValue;
+import com.opc2ecu.core.QualityReason;
 import java.util.*;
 import org.jinterop.dcom.common.JIException;
 import org.jinterop.dcom.core.JIVariant;
@@ -22,6 +23,8 @@ public class IsolatedSyncAccessTest {
         access.runOnce();
         assertEquals(Arrays.asList("a", "b"), capture.ids);
         assertEquals(Arrays.asList("start", "a", "b", "end"), capture.events);
+        assertEquals(QualityReason.POINT_READ_FAILED, capture.failures.get("bad"));
+        assertEquals(QualityReason.POINT_MISSING, capture.failures.get("missing"));
     }
 
     @Test public void identicalStatesAreDeliveredOnEveryRead() throws Exception {
@@ -43,6 +46,7 @@ public class IsolatedSyncAccessTest {
         access.runOnce();
         assertEquals(Arrays.asList("a", "b"), capture.ids);
         assertEquals(1, capture.completed);
+        assertEquals(QualityReason.SAMPLE_NOT_ENCODABLE, capture.failures.get("throws"));
     }
 
     @Test public void malformedBatchFallsBackToIndependentReads() throws Exception {
@@ -56,7 +60,9 @@ public class IsolatedSyncAccessTest {
         assertEquals(new HashSet<String>(Arrays.asList("a", "b")), new HashSet<String>(capture.ids));
         assertEquals(2, capture.ids.size());
         assertEquals(3, access.singleReads);
+        assertEquals(QualityReason.POINT_READ_FAILED, capture.failures.get("bad"));
         assertEquals(1, capture.completed);
+        assertNull(capture.connectionFailure);
     }
 
     @Test public void wholeRpcFailurePreservesExceptionAndClosesReadBoundary() throws Exception {
@@ -68,6 +74,8 @@ public class IsolatedSyncAccessTest {
         assertEquals(0, access.singleReads);
         assertTrue(capture.ids.isEmpty());
         assertEquals(1, capture.completed);
+        assertNotNull(capture.connectionFailure);
+        assertEquals(QualityReason.RPC_UNAVAILABLE, QualityReason.fromFailure(capture.connectionFailure));
     }
 
     @Test public void sharedRpcFailureDuringFallbackStopsFurtherPointReads() throws Exception {
@@ -102,6 +110,8 @@ public class IsolatedSyncAccessTest {
         final List<String> ids = new ArrayList<String>();
         final List<String> events = new ArrayList<String>();
         final List<OpcReadValue> values = new ArrayList<OpcReadValue>();
+        final Map<String, QualityReason> failures = new HashMap<String, QualityReason>();
+        Throwable connectionFailure;
         int completed;
         public void onCycleStarted() { events.add("start"); }
         public void onData(OpcReadValue value) {
@@ -111,6 +121,11 @@ public class IsolatedSyncAccessTest {
             values.add(value);
         }
         public void onCycleComplete() { completed++; events.add("end"); }
+        public void onPointFailure(String id, QualityReason reason) { failures.put(id, reason); }
+        public void onConnectionLost(Throwable failure) {
+            assertEquals("end", events.get(events.size()-1));
+            connectionFailure = failure;
+        }
     }
 
     private static class FakeAccess extends IsolatedSyncAccess {
